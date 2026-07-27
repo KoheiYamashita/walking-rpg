@@ -9,7 +9,10 @@ android-targetSdk = "36"
 
 # --- ライブラリ ---
 androidx-activityCompose = "1.13.0"
+androidx-core = "1.15.0"
+playServicesLocation = "21.3.0"
 coroutines = "1.11.0"
+kotlinxDatetime = "0.6.2"
 kotlinxSerialization = "1.11.0"
 koin = "4.2.2"
 ktor = "3.5.1"
@@ -22,6 +25,7 @@ kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-c
 kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "coroutines" }
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinxSerialization" }
+kotlinx-datetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.ref = "kotlinxDatetime" }
 
 # ViewModel（CMP公式サポートのKMP版 androidx.lifecycle）
 lifecycle-viewmodel = { module = "org.jetbrains.androidx.lifecycle:lifecycle-viewmodel", version.ref = "lifecycle" }
@@ -50,6 +54,11 @@ sqldelight-native-driver = { module = "app.cash.sqldelight:native-driver", versi
 
 # Android
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "androidx-activityCompose" }
+androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "androidx-core" }
+androidx-activity = { module = "androidx.activity:activity", version.ref = "androidx-activityCompose" }
+
+# 位置情報（Android）
+play-services-location = { module = "com.google.android.gms:play-services-location", version.ref = "playServicesLocation" }
 
 [plugins]
 androidApplication = { id = "com.android.application", version.ref = "agp" }

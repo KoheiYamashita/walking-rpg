@@ -1,0 +1,27 @@
+-- 測位サンプルの生ログ（architecture.md §4）。
+-- スパイクでは欠落率を測るため精度フィルタはかけず、取得したものを全件残す。
+
+CREATE TABLE location_sample (
+    session_id INTEGER NOT NULL REFERENCES walk_session(id),
+    ts         INTEGER NOT NULL,  -- epoch millis（測位時刻）
+    lat        REAL NOT NULL,
+    lon        REAL NOT NULL,
+    accuracy   REAL NOT NULL      -- 水平精度（メートル）
+);
+
+CREATE INDEX location_sample_session_ts ON location_sample(session_id, ts);
+
+insertSample:
+INSERT INTO location_sample(session_id, ts, lat, lon, accuracy)
+VALUES (?, ?, ?, ?, ?);
+
+selectSamplesBySession:
+SELECT session_id, ts, lat, lon, accuracy
+FROM location_sample
+WHERE session_id = ?
+ORDER BY ts;
+
+countSamplesBySession:
+SELECT COUNT(*)
+FROM location_sample
+WHERE session_id = ?;

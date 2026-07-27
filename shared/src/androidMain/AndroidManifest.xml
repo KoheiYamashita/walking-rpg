@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- 測位（architecture.md §5）。歩行の軌跡が要るので FINE を使う -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+
+    <!-- 記録中の保険（画面オフ・ロック時にプロセスを落とされないため） -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <uses-feature
+        android:name="android.hardware.location.gps"
+        android:required="false" />
+
+    <application>
+
+        <service
+            android:name="com.walkingrpg.shared.platform.WalkRecordingService"
+            android:exported="false"
+            android:foregroundServiceType="location" />
+
+        <!-- エクスポートしたJSONを共有UIに渡すためのFileProvider -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/walking_rpg_file_paths" />
+        </provider>
+    </application>
+
+</manifest>
