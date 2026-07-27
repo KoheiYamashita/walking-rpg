@@ -1,8 +1,12 @@
 package com.walkingrpg.app.ui.map
 
+import android.annotation.SuppressLint
+import android.content.Context
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
@@ -10,11 +14,17 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.google.gson.JsonObject
+import com.walkingrpg.shared.domain.map.GeoPoint
 import com.walkingrpg.shared.domain.map.MapCamera
 import com.walkingrpg.shared.domain.map.WayHighlight
 import org.maplibre.android.MapLibre
 import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.geometry.LatLng
+import org.maplibre.android.location.LocationComponent
+import org.maplibre.android.location.LocationComponentActivationOptions
+import org.maplibre.android.location.modes.CameraMode
+import org.maplibre.android.location.modes.RenderMode
+import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.Style
 import org.maplibre.android.style.expressions.Expression
@@ -50,6 +60,7 @@ private const val COLOR_PROPERTY = "color"
 actual fun MapCanvas(
     camera: MapCamera,
     highlights: List<WayHighlight>,
+    userLocation: GeoPoint?,
     modifier: Modifier,
 ) {
     val context = LocalContext.current
@@ -61,6 +72,9 @@ actual fun MapCanvas(
     }
 
     val features = remember(highlights) { highlights.toFeatureCollection() }
+
+    // スタイル読み込み完了は非同期なので、そのコールバック時点の最新値を読めるようにしておく。
+    val showUserLocation by rememberUpdatedState(userLocation != null)
 
     MapViewLifecycle(mapView)
 
@@ -78,6 +92,7 @@ actual fun MapCanvas(
                         // 抽象レイヤーはOpenFreeMapのスタイルの一番上に重ねる。
                         style.addSource(GeoJsonSource(HIGHLIGHT_SOURCE_ID, features))
                         style.addLayer(highlightLayer())
+                        if (showUserLocation) map.enableUserLocationPuck(context, style)
                     }
                 }
             }
@@ -85,10 +100,37 @@ actual fun MapCanvas(
         update = { view ->
             // 歩行ログが増えれば描き直す（スパイクでは初回のみ実質動く）。
             view.getMapAsync { map ->
-                map.style?.getSourceAs<GeoJsonSource>(HIGHLIGHT_SOURCE_ID)?.setGeoJson(features)
+                val style = map.style ?: return@getMapAsync
+                style.getSourceAs<GeoJsonSource>(HIGHLIGHT_SOURCE_ID)?.setGeoJson(features)
+                if (showUserLocation) map.enableUserLocationPuck(context, style)
             }
         },
     )
+}
+
+/**
+ * 現在地マーカー（MapLibreの [LocationComponent]）を出す。
+ *
+ * 権限のチェックはここではしない。呼び出し側が `userLocation != null`
+ * ＝ 上位（`LocationPermissionController` 由来の判定）でGRANTEDを確認済みのときだけ呼ぶ。
+ * 判定をこことプラットフォーム層の二箇所に持たないための取り決め。
+ *
+ * 追従はしない（[CameraMode.NONE]）。開いた時点の現在地に寄せるのはカメラ側の仕事で、
+ * 追従モードは issue #10 の領分（design.md §3）。
+ */
+@SuppressLint("MissingPermission")
+private fun MapLibreMap.enableUserLocationPuck(context: Context, style: Style) {
+    val component = locationComponent
+    if (!component.isLocationComponentActivated) {
+        component.activateLocationComponent(
+            LocationComponentActivationOptions.builder(context, style)
+                .useDefaultLocationEngine(true)
+                .build(),
+        )
+    }
+    component.isLocationComponentEnabled = true
+    component.cameraMode = CameraMode.NONE
+    component.renderMode = RenderMode.NORMAL
 }
 
 /**

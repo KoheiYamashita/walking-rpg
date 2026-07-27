@@ -2,6 +2,7 @@ package com.walkingrpg.app.ui.map
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import com.walkingrpg.shared.domain.map.GeoPoint
 import com.walkingrpg.shared.domain.map.MapCamera
 import com.walkingrpg.shared.domain.map.WayHighlight
 
@@ -13,11 +14,15 @@ import com.walkingrpg.shared.domain.map.WayHighlight
  * 背景タイルはOpenFreeMapからオンラインで取得する。
  *
  * @param highlights way単位の色づけ（design.md §8「実地図＋抽象レイヤー」）。
+ * @param userLocation 現在地。`null`（権限なし・測位できない）のときはマーカーを出さない。
+ *  非nullは「上位で権限GRANTEDを確認済み」であることを表すので、地図SDK側の
+ *  現在地表示もこのフラグだけで出し分ける（権限判定を二重に持たない）。
  */
 @Composable
 expect fun MapCanvas(
     camera: MapCamera,
     highlights: List<WayHighlight>,
+    userLocation: GeoPoint?,
     modifier: Modifier = Modifier,
 )
 

@@ -17,6 +17,8 @@ data class MapUiState(
     val isLoading: Boolean = true,
     val camera: MapCamera = MapCamera(GeoPoint(0.0, 0.0), zoom = 1.0),
     val highlights: List<WayHighlight> = emptyList(),
+    /** 現在地。取れなかった（権限なし等）ときは `null` で、マーカーを出さない。 */
+    val userLocation: GeoPoint? = null,
 )
 
 /**
@@ -36,7 +38,12 @@ class MapViewModel(
         viewModelScope.launch {
             val scene = getMapScene()
             _uiState.update {
-                it.copy(isLoading = false, camera = scene.camera, highlights = scene.highlights)
+                it.copy(
+                    isLoading = false,
+                    camera = scene.camera,
+                    highlights = scene.highlights,
+                    userLocation = scene.userLocation,
+                )
             }
         }
     }

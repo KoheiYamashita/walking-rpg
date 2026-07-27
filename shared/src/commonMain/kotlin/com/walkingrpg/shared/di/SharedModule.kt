@@ -1,5 +1,6 @@
 package com.walkingrpg.shared.di
 
+import com.walkingrpg.shared.data.CurrentLocationRepositoryImpl
 import com.walkingrpg.shared.data.LocationPermissionRepositoryImpl
 import com.walkingrpg.shared.data.SystemClock
 import com.walkingrpg.shared.data.SystemInfoRepositoryImpl
@@ -13,6 +14,7 @@ import com.walkingrpg.shared.domain.GetPlatformNameUseCase
 import com.walkingrpg.shared.domain.SystemInfoRepository
 import com.walkingrpg.shared.domain.map.GetMapSceneUseCase
 import com.walkingrpg.shared.domain.map.MapCameraRepository
+import com.walkingrpg.shared.domain.walk.CurrentLocationRepository
 import com.walkingrpg.shared.domain.walk.ExportWalkSessionUseCase
 import com.walkingrpg.shared.domain.walk.LocationPermissionRepository
 import com.walkingrpg.shared.domain.walk.ObserveLocationPermissionUseCase
@@ -82,5 +84,7 @@ val sharedModule = module {
 
     // --- 地図（issue #4） ---
     singleOf(::MapCameraRepositoryImpl) bind MapCameraRepository::class
+    // 現在地は記録用の測位（WalkRecorder）と同じ LocationProvider / 権限判定を使い回す
+    single<CurrentLocationRepository> { CurrentLocationRepositoryImpl(get(), get()) }
     factoryOf(::GetMapSceneUseCase)
 }

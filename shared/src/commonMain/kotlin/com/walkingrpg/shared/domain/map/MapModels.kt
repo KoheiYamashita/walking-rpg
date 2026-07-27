@@ -35,9 +35,13 @@ data class WayHighlight(
  * 地図画面が描画に必要とするものの全体。
  *
  * 背景タイルはOpenFreeMapからオンライン取得する（architecture.md §1）ので、
- * ドメインが持つのはカメラと抽象レイヤーだけ。
+ * ドメインが持つのはカメラと抽象レイヤー、それに現在地だけ。
+ *
+ * @param userLocation 画面を開いた時点の現在地。権限がない・測位できないときは `null`
+ *  （このとき [camera] はローカル設定由来の初期位置になる）。追従はしない（issue #10 の領分）。
  */
 data class MapScene(
     val camera: MapCamera,
     val highlights: List<WayHighlight>,
+    val userLocation: GeoPoint? = null,
 )

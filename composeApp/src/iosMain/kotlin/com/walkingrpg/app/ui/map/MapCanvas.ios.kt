@@ -9,6 +9,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.walkingrpg.shared.domain.map.GeoPoint
 import com.walkingrpg.shared.domain.map.MapCamera
 import com.walkingrpg.shared.domain.map.WayHighlight
 
@@ -26,6 +27,7 @@ import com.walkingrpg.shared.domain.map.WayHighlight
 actual fun MapCanvas(
     camera: MapCamera,
     highlights: List<WayHighlight>,
+    userLocation: GeoPoint?,
     modifier: Modifier,
 ) {
     Column(

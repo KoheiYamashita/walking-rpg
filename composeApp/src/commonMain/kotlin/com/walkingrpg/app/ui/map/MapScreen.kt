@@ -50,6 +50,7 @@ fun MapContent(
             MapCanvas(
                 camera = uiState.camera,
                 highlights = uiState.highlights,
+                userLocation = uiState.userLocation,
                 modifier = Modifier.fillMaxSize(),
             )
         }

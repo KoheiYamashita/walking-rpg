@@ -1,5 +1,7 @@
 package com.walkingrpg.shared.domain.map
 
+import com.walkingrpg.shared.domain.walk.CurrentLocationRepository
+
 /**
  * 地図画面に出すもの一式を組み立てるUseCase。
  *
@@ -8,13 +10,26 @@ package com.walkingrpg.shared.domain.map
  * 必ず同じ出力になる（architecture.md §0「状態 = 歩行ログの累積」の性質を先取り）。
  *
  * 後続issue（#6 map matching）で、ここが `passage` からの導出に置き換わる。
+ *
+ * カメラの中心は「現在地が取れればそこ、取れなければローカル設定由来の初期位置」。
+ * 現在地が取れるかどうかは [CurrentLocationRepository] の向こう側（権限・測位）に閉じており、
+ * このUseCaseは `null` かどうかしか見ない。
  */
 class GetMapSceneUseCase(
     private val mapCameraRepository: MapCameraRepository,
+    private val currentLocationRepository: CurrentLocationRepository,
 ) {
     suspend operator fun invoke(): MapScene {
-        val camera = mapCameraRepository.initialCamera()
-        return MapScene(camera = camera, highlights = demoHighlights(camera.center))
+        val fallback = mapCameraRepository.initialCamera()
+        val userLocation = currentLocationRepository.currentFix()
+            ?.let { GeoPoint(latitude = it.latitude, longitude = it.longitude) }
+        val camera = fallback.copy(center = userLocation ?: fallback.center)
+
+        return MapScene(
+            camera = camera,
+            highlights = demoHighlights(camera.center),
+            userLocation = userLocation,
+        )
     }
 
     /**
