@@ -69,10 +69,15 @@ Android SDKの場所は `local.properties`（Git管理外）か `ANDROID_HOME` �
 `local.properties`（Git管理外）に各自で書く：
 
 ```properties
-map.center.lat=0.0     # 自分の対象圏の緯度
-map.center.lon=0.0     # 自分の対象圏の経度
+# 自分の対象圏の緯度・経度・初期ズーム
+map.center.lat=0.0
+map.center.lon=0.0
 map.zoom=15
 ```
+
+`local.properties` は Java の `Properties` 形式なので、**行内コメントは書けない**
+（`map.zoom=15  # ズーム` と書くと `15  # ズーム` が値になり、ビルド構成が失敗する）。
+コメントは上のように行頭 `#` の独立した行に書くこと。
 
 未設定でもビルドは通る（世界全体が表示されるだけ）。
 
