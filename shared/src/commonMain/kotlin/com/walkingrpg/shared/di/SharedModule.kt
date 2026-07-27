@@ -7,9 +7,12 @@ import com.walkingrpg.shared.data.WalkRecorderImpl
 import com.walkingrpg.shared.data.WalkSessionExporterImpl
 import com.walkingrpg.shared.data.WalkSessionRepositoryImpl
 import com.walkingrpg.shared.data.createDatabase
+import com.walkingrpg.shared.data.map.MapCameraRepositoryImpl
 import com.walkingrpg.shared.domain.Clock
 import com.walkingrpg.shared.domain.GetPlatformNameUseCase
 import com.walkingrpg.shared.domain.SystemInfoRepository
+import com.walkingrpg.shared.domain.map.GetMapSceneUseCase
+import com.walkingrpg.shared.domain.map.MapCameraRepository
 import com.walkingrpg.shared.domain.walk.ExportWalkSessionUseCase
 import com.walkingrpg.shared.domain.walk.LocationPermissionRepository
 import com.walkingrpg.shared.domain.walk.ObserveLocationPermissionUseCase
@@ -46,6 +49,7 @@ val sharedModule = module {
     includes(platformModule)
 
     single<Platform> { currentPlatform() }
+
     singleOf(::SystemInfoRepositoryImpl) bind SystemInfoRepository::class
     factoryOf(::GetPlatformNameUseCase)
 
@@ -75,4 +79,8 @@ val sharedModule = module {
     factoryOf(::RequestLocationPermissionUseCase)
     factoryOf(::RefreshLocationPermissionUseCase)
     factoryOf(::ExportWalkSessionUseCase)
+
+    // --- 地図（issue #4） ---
+    singleOf(::MapCameraRepositoryImpl) bind MapCameraRepository::class
+    factoryOf(::GetMapSceneUseCase)
 }

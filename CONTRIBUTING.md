@@ -64,6 +64,18 @@ open iosApp/iosApp.xcodeproj            # iOS（macOSのみ）
 
 Android SDKの場所は `local.properties`（Git管理外）か `ANDROID_HOME` で指定する。
 
+地図タイルはOpenFreeMapからオンライン取得するので準備は要らない（キー不要）。
+ただし**地図の初期表示位置は対象圏そのもの＝位置情報**なのでリポジトリに入れない。
+`local.properties`（Git管理外）に各自で書く：
+
+```properties
+map.center.lat=0.0     # 自分の対象圏の緯度
+map.center.lon=0.0     # 自分の対象圏の経度
+map.zoom=15
+```
+
+未設定でもビルドは通る（世界全体が表示されるだけ）。
+
 ## テスト方針（architecture.md §7）
 
 - ドメイン層は純Kotlinなので通常のunit testで書ける。map matching・成長・チェーン判定に集中させる

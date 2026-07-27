@@ -45,6 +45,7 @@ import org.koin.compose.viewmodel.koinViewModel
  */
 @Composable
 fun HomeScreen(
+    onOpenMap: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: HomeViewModel = koinViewModel(),
 ) {
@@ -58,6 +59,7 @@ fun HomeScreen(
         onRequestPermission = viewModel::onRequestPermission,
         onExportSession = viewModel::onExportSession,
         onMessageShown = viewModel::onMessageShown,
+        onOpenMap = onOpenMap,
         modifier = modifier,
     )
 }
@@ -70,6 +72,7 @@ fun HomeContent(
     onRequestPermission: () -> Unit,
     onExportSession: (Long) -> Unit,
     onMessageShown: () -> Unit,
+    onOpenMap: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     KeepScreenOn(uiState.keepScreenOn)
@@ -127,6 +130,12 @@ fun HomeContent(
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text(if (uiState.isWalking) "散歩を終える" else "散歩に出る")
+                }
+            }
+
+            item {
+                TextButton(onClick = onOpenMap, modifier = Modifier.fillMaxWidth()) {
+                    Text("地図を見る")
                 }
             }
 

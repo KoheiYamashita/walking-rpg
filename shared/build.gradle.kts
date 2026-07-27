@@ -1,5 +1,19 @@
 import org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.util.Properties
+
+/**
+ * 地図の初期表示位置は「実在の座標をリポジトリに含めない」ため、
+ * Git管理外の `local.properties` から読む（未設定なら世界全体を表示する 0,0 / z1）。
+ * 設定手順は CONTRIBUTING.md「ビルド」を参照。
+ */
+val localMapConfig: Properties = Properties().apply {
+    val file = rootProject.file("local.properties")
+    if (file.exists()) file.inputStream().use { load(it) }
+}
+
+fun localMapValue(key: String, fallback: String): String =
+    (localMapConfig.getProperty(key) ?: fallback).trim().also { it.toDouble() }
 
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
@@ -71,6 +85,14 @@ android {
 
     defaultConfig {
         minSdk = libs.versions.android.minSdk.get().toInt()
+
+        buildConfigField("String", "MAP_CENTER_LAT", "\"${localMapValue("map.center.lat", "0.0")}\"")
+        buildConfigField("String", "MAP_CENTER_LON", "\"${localMapValue("map.center.lon", "0.0")}\"")
+        buildConfigField("String", "MAP_ZOOM", "\"${localMapValue("map.zoom", "1.0")}\"")
+    }
+
+    buildFeatures {
+        buildConfig = true
     }
 
     compileOptions {
