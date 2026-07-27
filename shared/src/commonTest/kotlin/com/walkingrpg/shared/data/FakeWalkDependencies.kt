@@ -12,6 +12,7 @@ import com.walkingrpg.shared.platform.SessionKeeper
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.map
 
 /** テスト用の差し替え実装。 */
@@ -37,6 +38,8 @@ internal class FakeSessionKeeper : SessionKeeper {
 
 internal class FakeLocationProvider(
     private val failure: Throwable? = null,
+    /** 指定すると、この列を流したあとストリームを完了する（測位側が止まった状況の再現）。 */
+    private val finiteFixes: List<LocationFix>? = null,
 ) : LocationProvider {
 
     val fixes = MutableSharedFlow<LocationFix>()
@@ -46,7 +49,7 @@ internal class FakeLocationProvider(
     override fun updates(intervalMs: Long): Flow<LocationFix> {
         requestedIntervalMs = intervalMs
         failure?.let { throw it }
-        return fixes
+        return finiteFixes?.asFlow() ?: fixes
     }
 }
 
@@ -85,10 +88,15 @@ internal class FakeWalkSessionRepository : WalkSessionRepository {
         }
     }
 
-    override suspend fun abandonOpenSessions(endedAtMs: Long) {
+    // 本実装（SQL）と同じく、終了時刻は最後のサンプルの時刻。無ければ開始時刻。
+    override suspend fun abandonOpenSessions() {
         sessionsState.value = sessionsState.value.map { session ->
             if (session.isOpen) {
-                session.copy(endedAtMs = endedAtMs, endReason = SessionEndReason.ABANDONED)
+                session.copy(
+                    endedAtMs = samplesOf(session.id).maxOfOrNull { it.timestampMs }
+                        ?: session.startedAtMs,
+                    endReason = SessionEndReason.ABANDONED,
+                )
             } else {
                 session
             }

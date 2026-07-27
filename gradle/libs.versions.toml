@@ -56,6 +56,8 @@ sqldelight-runtime = { module = "app.cash.sqldelight:runtime", version.ref = "sq
 sqldelight-coroutines-extensions = { module = "app.cash.sqldelight:coroutines-extensions", version.ref = "sqldelight" }
 sqldelight-android-driver = { module = "app.cash.sqldelight:android-driver", version.ref = "sqldelight" }
 sqldelight-native-driver = { module = "app.cash.sqldelight:native-driver", version.ref = "sqldelight" }
+# JVM上のunit testで実際のSQLite相手にクエリ（.sq）を検証するためのドライバ
+sqldelight-sqlite-driver = { module = "app.cash.sqldelight:sqlite-driver", version.ref = "sqldelight" }
 
 # 地図（Androidのみ。iOSはSPM/CocoaPodsで別途導入する）
 # 既定の android-sdk は Vulkan ビルドで `uses-feature vulkan required=true` が入り

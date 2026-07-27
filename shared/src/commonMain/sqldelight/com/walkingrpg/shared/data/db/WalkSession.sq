@@ -22,10 +22,17 @@ UPDATE walk_session
 SET ended_at = :endedAt, end_reason = :endReason
 WHERE id = :id AND ended_at IS NULL;
 
--- アプリが強制終了した場合に開きっぱなしになったセッションを畳む
+-- アプリが強制終了した場合に開きっぱなしになったセッションを畳む。
+-- ended_at は「そのセッションで最後に取れた測位サンプルの時刻」（1件も無ければ started_at）。
+-- 畳む処理を走らせた時刻（＝次回の起動・開始時刻）を入れると、
+-- 数日後に起動しただけで継続時間が何日にも化けてしまう。
 abandonOpenSessions:
 UPDATE walk_session
-SET ended_at = :endedAt, end_reason = :endReason
+SET ended_at = COALESCE(
+        (SELECT MAX(l.ts) FROM location_sample l WHERE l.session_id = walk_session.id),
+        started_at
+    ),
+    end_reason = :endReason
 WHERE ended_at IS NULL;
 
 selectSession:

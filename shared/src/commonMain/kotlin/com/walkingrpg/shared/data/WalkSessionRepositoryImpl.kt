@@ -52,11 +52,9 @@ internal class WalkSessionRepositoryImpl(
         sessions.endSession(endedAt = endedAtMs, endReason = reason.name, id = sessionId)
     }
 
-    override suspend fun abandonOpenSessions(endedAtMs: Long): Unit = withContext(dispatcher) {
-        sessions.abandonOpenSessions(
-            endedAt = endedAtMs,
-            endReason = SessionEndReason.ABANDONED.name,
-        )
+    // 終了時刻は「最後のサンプルのts（無ければstarted_at）」で、SQL側（WalkSession.sq）で決める。
+    override suspend fun abandonOpenSessions(): Unit = withContext(dispatcher) {
+        sessions.abandonOpenSessions(endReason = SessionEndReason.ABANDONED.name)
     }
 
     override fun observeSessions(): Flow<List<WalkSessionSummary>> =

@@ -61,6 +61,10 @@ kotlin {
             implementation(kotlin("test"))
             implementation(libs.kotlinx.coroutines.test)
         }
+        androidUnitTest.dependencies {
+            // .sq のクエリはJVM上のインメモリSQLiteで実際に実行して検証する
+            implementation(libs.sqldelight.sqlite.driver)
+        }
         androidMain.dependencies {
             implementation(libs.kotlinx.coroutines.android)
             implementation(libs.ktor.client.okhttp)

@@ -22,8 +22,11 @@ interface WalkSessionRepository {
     /**
      * 開きっぱなしのセッション（強制終了・クラッシュで残ったもの）を
      * [SessionEndReason.ABANDONED] として畳む。記録済みサンプルは消さない。
+     *
+     * 終了時刻は「そのセッションで最後に取れたサンプルの時刻」（1件も無ければ開始時刻）。
+     * 畳む時点の現在時刻ではないので、何日後に起動しても継続時間は汚れない。
      */
-    suspend fun abandonOpenSessions(endedAtMs: Long)
+    suspend fun abandonOpenSessions()
 
     /** セッション一覧（新しい順）。DBの変更に追従する。 */
     fun observeSessions(): Flow<List<WalkSessionSummary>>

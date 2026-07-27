@@ -66,6 +66,31 @@ class WalkRecorderImplTest {
     }
 
     @Test
+    fun 放置セッションの終了時刻は最後のサンプルの時刻になる() = runTest {
+        val repository = FakeWalkSessionRepository()
+        val abandonedId = repository.startSession(startedAtMs = 0L)
+        repository.appendSample(fix(ts = 100L).toSample(abandonedId))
+        repository.appendSample(fix(ts = 500L).toSample(abandonedId))
+        // 数日後に起動した想定
+        val recorder = recorder(repository = repository, clock = MutableClock(500_000_000L))
+
+        recorder.start()
+
+        assertEquals(500L, repository.sessions.first().endedAtMs)
+    }
+
+    @Test
+    fun サンプルの無い放置セッションの終了時刻は開始時刻になる() = runTest {
+        val repository = FakeWalkSessionRepository()
+        repository.startSession(startedAtMs = 42L)
+        val recorder = recorder(repository = repository, clock = MutableClock(500_000_000L))
+
+        recorder.start()
+
+        assertEquals(42L, repository.sessions.first().endedAtMs)
+    }
+
+    @Test
     fun 二重に開始してもセッションは増えない() = runTest {
         val repository = FakeWalkSessionRepository()
         val recorder = recorder(repository = repository)
@@ -145,19 +170,80 @@ class WalkRecorderImplTest {
     }
 
     @Test
-    fun 測位に失敗したらエラーが状態に出るがセッションは残る() = runTest {
+    fun 測位に失敗したらセッションを畳んでエラーを残す() = runTest {
         val provider = FakeLocationProvider(
             failure = LocationUnavailableException("位置情報の権限がありません"),
         )
+        val repository = FakeWalkSessionRepository()
+        val keeper = FakeSessionKeeper()
+        val recorder = recorder(provider = provider, repository = repository, keeper = keeper)
+
+        recorder.start()
+        runCurrent()
+
+        // エラー内容は画面に出したいので状態に残す
+        assertEquals("位置情報の権限がありません", recorder.state.value.error)
+        // 「記録中」表示とForeground Serviceを残さない
+        assertFalse(recorder.state.value.isRecording)
+        assertEquals(1, keeper.stopped)
+
+        val session = repository.sessions.single()
+        assertEquals(SessionEndReason.LOCATION_ERROR, session.endReason)
+        // サンプルが1件も無いので現在時刻で畳む
+        assertEquals(1_000L, session.endedAtMs)
+    }
+
+    @Test
+    fun 測位ストリームが終了したら最後のサンプル時刻でセッションを畳む() = runTest {
+        val provider = FakeLocationProvider(finiteFixes = listOf(fix(ts = 1_100L), fix(ts = 1_200L)))
+        val repository = FakeWalkSessionRepository()
+        val keeper = FakeSessionKeeper()
+        val clock = MutableClock(1_000L)
+        val recorder = recorder(provider, repository, keeper, clock)
+
+        recorder.start()
+        clock.nowMs = 9_999_999L
+        runCurrent()
+
+        val session = repository.sessions.single()
+        assertEquals(1_200L, session.endedAtMs)
+        assertEquals(SessionEndReason.LOCATION_ERROR, session.endReason)
+        assertEquals(2, repository.samplesOf(session.id).size)
+        assertFalse(recorder.state.value.isRecording)
+        assertEquals(1, keeper.stopped)
+        assertNotNull(recorder.state.value.error)
+    }
+
+    @Test
+    fun ストリーム終了後に再開できる() = runTest {
+        val provider = FakeLocationProvider(finiteFixes = listOf(fix(ts = 1_100L)))
         val repository = FakeWalkSessionRepository()
         val recorder = recorder(provider = provider, repository = repository)
 
         recorder.start()
         runCurrent()
+        recorder.start()
+        runCurrent()
 
-        assertEquals("位置情報の権限がありません", recorder.state.value.error)
-        assertTrue(recorder.state.value.isRecording)
-        assertEquals(1, repository.sessions.size)
+        assertEquals(2, repository.sessions.size)
+        // 畳んだセッションを再度 ABANDONED で上書きしない
+        assertEquals(SessionEndReason.LOCATION_ERROR, repository.sessions.first().endReason)
+    }
+
+    @Test
+    fun ストリーム終了後の停止は二重に畳まない() = runTest {
+        val provider = FakeLocationProvider(finiteFixes = listOf(fix(ts = 1_100L)))
+        val repository = FakeWalkSessionRepository()
+        val keeper = FakeSessionKeeper()
+        val recorder = recorder(provider = provider, repository = repository, keeper = keeper)
+
+        recorder.start()
+        runCurrent()
+        recorder.stop()
+
+        assertEquals(1_100L, repository.sessions.single().endedAtMs)
+        assertEquals(SessionEndReason.LOCATION_ERROR, repository.sessions.single().endReason)
+        assertEquals(1, keeper.stopped)
     }
 
     @Test

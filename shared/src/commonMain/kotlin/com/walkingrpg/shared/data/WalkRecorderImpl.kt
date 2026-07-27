@@ -48,7 +48,8 @@ internal class WalkRecorderImpl(
         if (_state.value.isRecording) return@withLock
 
         // 前回アプリが落ちて開きっぱなしのセッションがあれば畳んでおく
-        sessionRepository.abandonOpenSessions(clock.nowMillis())
+        // （終了時刻は最後のサンプルの時刻。決めるのはリポジトリ側）
+        sessionRepository.abandonOpenSessions()
 
         val startedAtMs = clock.nowMillis()
         val sessionId = sessionRepository.startSession(startedAtMs)
@@ -56,20 +57,43 @@ internal class WalkRecorderImpl(
         sessionKeeper.start()
 
         collectJob = scope.launch {
-            try {
+            val message = try {
                 locationProvider.updates(updateIntervalMs).collect { fix ->
                     val sample = fix.toSample(sessionId)
                     sessionRepository.appendSample(sample)
                     _state.update { it.sampleRecorded(sample) }
                 }
                 // 測位側がストリームを終了した＝これ以上サンプルが来ない
-                _state.update { it.errored(MESSAGE_STREAM_ENDED) }
+                MESSAGE_STREAM_ENDED
             } catch (cancellation: CancellationException) {
+                // stop() によるキャンセル。畳むのは stop() の仕事
                 throw cancellation
             } catch (error: Throwable) {
-                _state.update { it.errored(error.message ?: MESSAGE_UNKNOWN_ERROR) }
+                error.message ?: MESSAGE_UNKNOWN_ERROR
             }
+            finishAfterStreamEnded(sessionId, message)
         }
+    }
+
+    /**
+     * 測位ストリームが終わった（＝もうサンプルが来ない）ときの後始末。
+     *
+     * ここで畳まないと、記録中表示と [SessionKeeper]（Foreground Service）が
+     * 手動停止まで無期限に残り、DBのセッションも開きっぱなしになる。
+     * 終了時刻は最後に取れたサンプルの時刻（1件も無ければ現在時刻）で、
+     * 「実際に記録できていたところまで」をセッションの長さにする。
+     * エラーメッセージは状態に残して、なぜ止まったかを画面に出せるようにする。
+     */
+    private suspend fun finishAfterStreamEnded(sessionId: Long, message: String) = mutex.withLock {
+        // すでに stop() で畳まれている／別セッションが始まっているなら何もしない
+        if (_state.value.sessionId != sessionId) return@withLock
+
+        collectJob = null
+        sessionKeeper.stop()
+
+        val endedAtMs = _state.value.lastSample?.timestampMs ?: clock.nowMillis()
+        sessionRepository.endSession(sessionId, endedAtMs, SessionEndReason.LOCATION_ERROR)
+        _state.update { it.stopped(endedAtMs).errored(message) }
     }
 
     override suspend fun stop(): Unit = mutex.withLock {
