@@ -9,11 +9,15 @@ android-targetSdk = "36"
 
 # --- ライブラリ ---
 androidx-activityCompose = "1.13.0"
+androidx-core = "1.15.0"
+playServicesLocation = "21.3.0"
 coroutines = "1.11.0"
+kotlinxDatetime = "0.6.2"
 kotlinxSerialization = "1.11.0"
 koin = "4.2.2"
 ktor = "3.5.1"
 lifecycle = "2.10.0"
+maplibre = "13.4.1"
 sqldelight = "2.3.2"
 
 [libraries]
@@ -22,6 +26,11 @@ kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-c
 kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "coroutines" }
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinxSerialization" }
+kotlinx-datetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.ref = "kotlinxDatetime" }
+
+# システムバック（Androidの戻る操作・iOSのスワイプバック）をcommonMainで受けるためのCMP公式アーティファクト。
+# compose DSL（compose.ui など）には含まれないので、明示的に依存を書く。
+compose-ui-backhandler = { module = "org.jetbrains.compose.ui:ui-backhandler", version.ref = "composeMultiplatform" }
 
 # ViewModel（CMP公式サポートのKMP版 androidx.lifecycle）
 lifecycle-viewmodel = { module = "org.jetbrains.androidx.lifecycle:lifecycle-viewmodel", version.ref = "lifecycle" }
@@ -47,9 +56,21 @@ sqldelight-runtime = { module = "app.cash.sqldelight:runtime", version.ref = "sq
 sqldelight-coroutines-extensions = { module = "app.cash.sqldelight:coroutines-extensions", version.ref = "sqldelight" }
 sqldelight-android-driver = { module = "app.cash.sqldelight:android-driver", version.ref = "sqldelight" }
 sqldelight-native-driver = { module = "app.cash.sqldelight:native-driver", version.ref = "sqldelight" }
+# JVM上のunit testで実際のSQLite相手にクエリ（.sq）を検証するためのドライバ
+sqldelight-sqlite-driver = { module = "app.cash.sqldelight:sqlite-driver", version.ref = "sqldelight" }
+
+# 地図（Androidのみ。iOSはSPM/CocoaPodsで別途導入する）
+# 既定の android-sdk は Vulkan ビルドで `uses-feature vulkan required=true` が入り
+# 対応端末が絞られるため、OpenGL ES ビルドを選ぶ（APIは同一）。
+maplibre-android = { module = "org.maplibre.gl:android-sdk-opengl", version.ref = "maplibre" }
 
 # Android
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "androidx-activityCompose" }
+androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "androidx-core" }
+androidx-activity = { module = "androidx.activity:activity", version.ref = "androidx-activityCompose" }
+
+# 位置情報（Android）
+play-services-location = { module = "com.google.android.gms:play-services-location", version.ref = "playServicesLocation" }
 
 [plugins]
 androidApplication = { id = "com.android.application", version.ref = "agp" }
