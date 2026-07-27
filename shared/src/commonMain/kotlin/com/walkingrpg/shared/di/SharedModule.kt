@@ -6,8 +6,11 @@ import com.walkingrpg.shared.data.SystemClock
 import com.walkingrpg.shared.data.SystemInfoRepositoryImpl
 import com.walkingrpg.shared.data.WalkRecorderImpl
 import com.walkingrpg.shared.data.WalkSessionExporterImpl
+import com.walkingrpg.shared.data.SetupRepositoryImpl
 import com.walkingrpg.shared.data.WalkSessionRepositoryImpl
 import com.walkingrpg.shared.data.createDatabase
+import com.walkingrpg.shared.data.llm.HttpLlmConnectionTester
+import com.walkingrpg.shared.data.llm.llmHttpClient
 import com.walkingrpg.shared.data.osm.OsmMasterRepositoryImpl
 import com.walkingrpg.shared.data.osm.OverpassConfig
 import com.walkingrpg.shared.data.osm.OverpassOsmAreaSource
@@ -20,6 +23,15 @@ import com.walkingrpg.shared.domain.osm.GetOsmMasterCountsUseCase
 import com.walkingrpg.shared.domain.osm.ImportOsmAreaUseCase
 import com.walkingrpg.shared.domain.osm.OsmAreaSource
 import com.walkingrpg.shared.domain.osm.OsmMasterRepository
+import com.walkingrpg.shared.domain.setup.CompleteSetupUseCase
+import com.walkingrpg.shared.domain.setup.IsSetupCompletedUseCase
+import com.walkingrpg.shared.domain.setup.LlmConnectionTester
+import com.walkingrpg.shared.domain.setup.LoadSetupSettingsUseCase
+import com.walkingrpg.shared.domain.setup.RegisterHomeAnchorUseCase
+import com.walkingrpg.shared.domain.setup.SaveWeatherSettingsUseCase
+import com.walkingrpg.shared.domain.setup.SetupRepository
+import com.walkingrpg.shared.domain.setup.TestLlmConnectionUseCase
+import com.walkingrpg.shared.domain.setup.UpdateHomeBlurRadiusUseCase
 import com.walkingrpg.shared.domain.walk.CurrentLocationRepository
 import com.walkingrpg.shared.domain.walk.ExportWalkSessionUseCase
 import com.walkingrpg.shared.domain.walk.LocationPermissionRepository
@@ -53,6 +65,12 @@ val APP_SCOPE = named("appScope")
  * LLM・天候の呼び出し（別issue）とは設定（User-Agent・リトライ方針）が違うので分けておく。
  */
 private val OSM_HTTP_CLIENT = named("osmHttpClient")
+
+/**
+ * LLM疎通テスト用のHTTPクライアント（issue #6）。
+ * リトライなし・短いタイムアウトで、OSM取り込み用とは方針が違うので分けてある。
+ */
+private val LLM_HTTP_CLIENT = named("llmHttpClient")
 
 /**
  * shared モジュールのDI定義。
@@ -109,4 +127,20 @@ val sharedModule = module {
     single<OsmMasterRepository> { OsmMasterRepositoryImpl(get()) }
     factoryOf(::ImportOsmAreaUseCase)
     factoryOf(::GetOsmMasterCountsUseCase)
+
+    // --- 初回セットアップ（issue #6） ---
+    // 秘密（APIキー・自宅座標）と非秘密（URL・モデル名・完了フラグ）の振り分けは
+    // SetupRepositoryImpl に閉じる。UI層はUseCaseしか見ない。
+    single<SetupRepository> { SetupRepositoryImpl(get(), get()) }
+    single(LLM_HTTP_CLIENT) { llmHttpClient() }
+    // #14 で LlmClient を入れるときは、この bind を差し替えれば画面はそのまま動く
+    single<LlmConnectionTester> { HttpLlmConnectionTester(get(LLM_HTTP_CLIENT)) }
+
+    factoryOf(::IsSetupCompletedUseCase)
+    factoryOf(::LoadSetupSettingsUseCase)
+    factoryOf(::TestLlmConnectionUseCase)
+    factoryOf(::SaveWeatherSettingsUseCase)
+    factoryOf(::RegisterHomeAnchorUseCase)
+    factoryOf(::UpdateHomeBlurRadiusUseCase)
+    factoryOf(::CompleteSetupUseCase)
 }

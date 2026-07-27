@@ -142,7 +142,10 @@ class HomeViewModel(
         }
     }
 
-    /** デバッグ用の取り込みトリガー（issue #5）。本来の導線は初回セットアップ（issue #6）。 */
+    /**
+     * 再取り込みのトリガー（issue #5）。本導線は初回セットアップ（issue #6）に移ったが、
+     * 取り込みし直す手段として残してある。TODO(#20): 設定画面ができたらそちらへ移す。
+     */
     fun onImportOsmArea() {
         if (_uiState.value.osmImport.isImporting) return
         _uiState.update { it.copy(osmImport = it.osmImport.copy(isImporting = true, error = null)) }
