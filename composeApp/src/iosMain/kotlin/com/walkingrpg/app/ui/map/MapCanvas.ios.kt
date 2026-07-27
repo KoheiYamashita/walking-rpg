@@ -15,9 +15,9 @@ import com.walkingrpg.shared.domain.map.WayHighlight
 /**
  * iOS版の地図ビュー（プレースホルダ）。
  *
- * MapLibre Native iOS も `pmtiles://` に対応しているため、方式はAndroidと同一にできる。
- * ただし導入は `iosApp.xcodeproj` へのSPM追加（またはCocoaPods）が必要で、
- * Linux環境ではビルド検証できないため後続issueに送る。
+ * 方式はAndroidと同一にできる（OpenFreeMapのスタイルURLを `MLNMapView` に渡すだけ）。
+ * ただし導入は `iosApp.xcodeproj` へのSPM追加が必要で、Linux環境ではビルド検証が
+ * できないため後続issueに送る。
  *
  * TODO(issue #4 申し送り): SPM `https://github.com/maplibre/maplibre-gl-native-distribution`
  *  （product: `MapLibre`）を追加し、`UIKitView` で `MLNMapView` を埋め込む。
@@ -25,7 +25,6 @@ import com.walkingrpg.shared.domain.map.WayHighlight
 @Composable
 actual fun MapCanvas(
     camera: MapCamera,
-    tilesPath: String,
     highlights: List<WayHighlight>,
     modifier: Modifier,
 ) {

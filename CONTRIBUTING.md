@@ -64,9 +64,17 @@ open iosApp/iosApp.xcodeproj            # iOS（macOSのみ）
 
 Android SDKの場所は `local.properties`（Git管理外）か `ANDROID_HOME` で指定する。
 
-地図タイル（PMTiles）と初期表示位置は**対象圏そのもの＝位置情報**なのでリポジトリに入れない。
-各自で生成して配置する（未配置でもビルドは通り、地図画面が案内を出すだけ）。
-手順は [scripts/README.md](scripts/README.md)。
+地図タイルはOpenFreeMapからオンライン取得するので準備は要らない（キー不要）。
+ただし**地図の初期表示位置は対象圏そのもの＝位置情報**なのでリポジトリに入れない。
+`local.properties`（Git管理外）に各自で書く：
+
+```properties
+map.center.lat=0.0     # 自分の対象圏の緯度
+map.center.lon=0.0     # 自分の対象圏の経度
+map.zoom=15
+```
+
+未設定でもビルドは通る（世界全体が表示されるだけ）。
 
 ## テスト方針（architecture.md §7）
 

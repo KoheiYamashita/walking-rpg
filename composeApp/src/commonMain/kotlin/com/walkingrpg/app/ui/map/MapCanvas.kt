@@ -10,14 +10,13 @@ import com.walkingrpg.shared.domain.map.WayHighlight
  *
  * ネイティブの地図SDKをここだけに閉じ込め、common側は
  * ドメインモデル（[MapCamera] / [WayHighlight]）しか渡さない。
+ * 背景タイルはOpenFreeMapからオンラインで取得する。
  *
- * @param tilesPath ローカルPMTilesの絶対パス。呼び出し側が存在を保証する。
  * @param highlights way単位の色づけ（design.md §8「実地図＋抽象レイヤー」）。
  */
 @Composable
 expect fun MapCanvas(
     camera: MapCamera,
-    tilesPath: String,
     highlights: List<WayHighlight>,
     modifier: Modifier = Modifier,
 )

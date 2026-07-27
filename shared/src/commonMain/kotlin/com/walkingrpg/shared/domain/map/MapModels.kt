@@ -6,7 +6,7 @@ package com.walkingrpg.shared.domain.map
  * 描画APIにも地図SDKにも依存しない。MapLibreの型への変換はUI層（composeApp）で行う。
  */
 
-/** 緯度経度。座標そのものはリポジトリ外（ローカル設定・タイルファイル）から来る。 */
+/** 緯度経度。座標そのものはリポジトリ外（ローカル設定）から来る。 */
 data class GeoPoint(
     val latitude: Double,
     val longitude: Double,
@@ -16,21 +16,6 @@ data class GeoPoint(
 data class MapCamera(
     val center: GeoPoint,
     val zoom: Double,
-)
-
-/** 端末上のローカルタイル（PMTiles）の状態。 */
-sealed interface MapTiles {
-    /** 端末のファイルシステム上に展開済み。[absolutePath] はPMTilesファイルの絶対パス。 */
-    data class Ready(val absolutePath: String) : MapTiles
-
-    /** 未同梱・未展開。地図は表示できない（スパイクではその旨を画面に出す）。 */
-    data object NotInstalled : MapTiles
-}
-
-/** ローカル地図の素材一式。プラットフォーム層が用意し、データ層が包む。 */
-data class MapArea(
-    val camera: MapCamera,
-    val tiles: MapTiles,
 )
 
 /**
@@ -46,9 +31,13 @@ data class WayHighlight(
     val depth: Int,
 )
 
-/** 地図画面が描画に必要とするものの全体。 */
+/**
+ * 地図画面が描画に必要とするものの全体。
+ *
+ * 背景タイルはOpenFreeMapからオンライン取得する（architecture.md §1）ので、
+ * ドメインが持つのはカメラと抽象レイヤーだけ。
+ */
 data class MapScene(
     val camera: MapCamera,
-    val tiles: MapTiles,
     val highlights: List<WayHighlight>,
 )

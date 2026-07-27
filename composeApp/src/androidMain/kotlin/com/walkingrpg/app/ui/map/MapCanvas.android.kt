@@ -26,8 +26,15 @@ import org.maplibre.geojson.FeatureCollection
 import org.maplibre.geojson.LineString
 import org.maplibre.geojson.Point
 
-private const val STYLE_ASSET = "map/style-local.json"
-private const val PMTILES_URL_PLACEHOLDER = "{{PMTILES_URL}}"
+/**
+ * 背景タイルのスタイル（architecture.md §1）。
+ *
+ * OpenFreeMapのホスト済みスタイル。APIキー・利用登録なしで使える。
+ * `positron` は彩度の低いグレー基調で、上に重ねる抽象レイヤー（way色）が埋もれない
+ * （design.md §8「実地図＋抽象レイヤー」「地図描画にアート量を投入しない」）。
+ */
+private const val STYLE_URL = "https://tiles.openfreemap.org/styles/positron"
+
 private const val HIGHLIGHT_SOURCE_ID = "walked-ways"
 private const val HIGHLIGHT_LAYER_ID = "walked-ways-line"
 private const val COLOR_PROPERTY = "color"
@@ -35,13 +42,13 @@ private const val COLOR_PROPERTY = "color"
 /**
  * Android版の地図ビュー。MapLibre Native を [AndroidView] で埋め込む。
  *
- * タイルは `pmtiles://file://<絶対パス>` で参照する。MapLibre Native 11.8+ が
- * PMTilesプロトコルに対応しているため、変換もローカルHTTPサーバも要らない。
+ * タイルはオンライン取得。MapLibreが取得済みタイルをローカルキャッシュ（SQLite）に
+ * 持つため、圏外では一度表示した範囲がそのまま出る。未取得の範囲は空白になるだけで、
+ * 取得失敗が例外になることはない。
  */
 @Composable
 actual fun MapCanvas(
     camera: MapCamera,
-    tilesPath: String,
     highlights: List<WayHighlight>,
     modifier: Modifier,
 ) {
@@ -53,10 +60,6 @@ actual fun MapCanvas(
         MapView(context)
     }
 
-    val styleJson = remember(context, tilesPath) {
-        context.assets.open(STYLE_ASSET).bufferedReader().use { it.readText() }
-            .replace(PMTILES_URL_PLACEHOLDER, "pmtiles://file://$tilesPath")
-    }
     val features = remember(highlights) { highlights.toFeatureCollection() }
 
     MapViewLifecycle(mapView)
@@ -71,7 +74,8 @@ actual fun MapCanvas(
                         .target(LatLng(camera.center.latitude, camera.center.longitude))
                         .zoom(camera.zoom)
                         .build()
-                    map.setStyle(Style.Builder().fromJson(styleJson)) { style ->
+                    map.setStyle(Style.Builder().fromUri(STYLE_URL)) { style ->
+                        // 抽象レイヤーはOpenFreeMapのスタイルの一番上に重ねる。
                         style.addSource(GeoJsonSource(HIGHLIGHT_SOURCE_ID, features))
                         style.addLayer(highlightLayer())
                     }

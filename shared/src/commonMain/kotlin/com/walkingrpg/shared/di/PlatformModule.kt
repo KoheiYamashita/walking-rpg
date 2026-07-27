@@ -5,8 +5,9 @@ import org.koin.core.module.Module
 /**
  * プラットフォーム固有の実装だけを束ねたKoinモジュール。
  *
- * Android実装は `Context` のような依存を必要とするため、
- * インスタンス生成そのものを expect/actual で分ける
+ * 実装クラスそのものが android / ios にしか存在しないため、
+ * インスタンス生成を expect/actual で分ける
  * （`sharedModule` からは [platformModule] を include するだけ）。
+ * `Context` のような依存が要る実装も、ここで `get()` して渡せる。
  */
 expect val platformModule: Module

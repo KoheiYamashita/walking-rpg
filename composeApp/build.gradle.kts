@@ -81,12 +81,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    androidResources {
-        // PMTilesはレンジ読み出し前提のフォーマット。APK内で圧縮されると
-        // assetsからの取り出しが遅くなるだけなので圧縮対象から外す。
-        noCompress += "pmtiles"
-    }
-
     buildTypes {
         release {
             isMinifyEnabled = false

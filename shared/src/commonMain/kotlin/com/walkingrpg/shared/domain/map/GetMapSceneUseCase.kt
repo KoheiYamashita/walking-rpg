@@ -10,15 +10,11 @@ package com.walkingrpg.shared.domain.map
  * 後続issue（#6 map matching）で、ここが `passage` からの導出に置き換わる。
  */
 class GetMapSceneUseCase(
-    private val mapAreaRepository: MapAreaRepository,
+    private val mapCameraRepository: MapCameraRepository,
 ) {
     suspend operator fun invoke(): MapScene {
-        val area = mapAreaRepository.localArea()
-        return MapScene(
-            camera = area.camera,
-            tiles = area.tiles,
-            highlights = demoHighlights(area.camera.center),
-        )
+        val camera = mapCameraRepository.initialCamera()
+        return MapScene(camera = camera, highlights = demoHighlights(camera.center))
     }
 
     /**

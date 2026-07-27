@@ -1,11 +1,11 @@
 package com.walkingrpg.shared.di
 
 import com.walkingrpg.shared.data.SystemInfoRepositoryImpl
-import com.walkingrpg.shared.data.map.MapAreaRepositoryImpl
+import com.walkingrpg.shared.data.map.MapCameraRepositoryImpl
 import com.walkingrpg.shared.domain.GetPlatformNameUseCase
 import com.walkingrpg.shared.domain.SystemInfoRepository
 import com.walkingrpg.shared.domain.map.GetMapSceneUseCase
-import com.walkingrpg.shared.domain.map.MapAreaRepository
+import com.walkingrpg.shared.domain.map.MapCameraRepository
 import com.walkingrpg.shared.platform.Platform
 import com.walkingrpg.shared.platform.currentPlatform
 import org.koin.core.module.dsl.factoryOf
@@ -27,6 +27,6 @@ val sharedModule = module {
     singleOf(::SystemInfoRepositoryImpl) bind SystemInfoRepository::class
     factoryOf(::GetPlatformNameUseCase)
 
-    singleOf(::MapAreaRepositoryImpl) bind MapAreaRepository::class
+    singleOf(::MapCameraRepositoryImpl) bind MapCameraRepository::class
     factoryOf(::GetMapSceneUseCase)
 }

@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- 地図タイルはOpenFreeMapからオンライン取得する（architecture.md §1）。
+         MapLibreのAARからもマージされるが、依存が明示されるよう自分でも宣言しておく。 -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <application
         android:name=".WalkingRpgApplication"
         android:allowBackup="true"
