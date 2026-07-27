@@ -10,7 +10,8 @@
 
 - **モバイルアプリのみ。サーバー実装なし。** LLM API等の外部SaaSは端末から直接呼ぶ
 - **Kotlin Multiplatform + Compose Multiplatform。** UIも共通化する。例外は地図ビューだけ（ネイティブ埋め込み）
-- **オフラインファースト。** 散歩は通信なしで成立する（通信に**依存しない**）。
+- **オフラインファースト（ゲームロジック限定）。** 記録・成長・判定は通信なしで成立する（通信に**依存しない**）。
+  地図タイルはオンライン取得（圏外はキャッシュで劣化許容）。
   プレイ中のLLM呼び出しは贅沢品として許可するが、失敗しても事前生成分と定型文で必ず成立する
 - **MVVM + 単方向データフロー。** source of truth は歩行ログ。design.md §4.1「状態 = 歩行ログの累積、冪等で再計算できる」を、そのまま実装原則に昇格させる
 
@@ -20,7 +21,7 @@
 |---|---|---|
 | 言語・共有 | Kotlin Multiplatform | ドメイン・データ層を100%共有 |
 | UI | Compose Multiplatform | 画面数が少なく共通化の益が大きい。地図だけ例外 |
-| 地図表示 | MapLibre Native（AndroidView / UIKitView 埋め込み）＋ ローカルPMTiles | サーバーなしでオフライン地図が成立。「実地図＋抽象レイヤー」はMapLibreのスタイルレイヤーで描く |
+| 地図表示 | MapLibre Native（AndroidView / UIKitView 埋め込み）＋ **OpenFreeMap**（オンラインタイル、キー不要） | 常に最新のOSM背景。「実地図＋抽象レイヤー」はMapLibreのスタイルレイヤーで描く。圏外はキャッシュで劣化許容 |
 | DB | SQLDelight | KMP実績が長い。SQLファーストで型安全 |
 | HTTP | Ktor Client | KMP標準。Anthropic APIを直接叩く |
 | DI | Koin | KMP対応で軽量 |
@@ -159,8 +160,8 @@ GPS（1〜3秒間隔）→ 精度フィルタ → map matching（ローカルway
 ### OSMデータ取り込み
 
 - 初回セットアップで対象圏（500m〜1km）を Overpass API から取得してSQLiteへ
-- 地図タイルは対象圏のPMTilesを1回ダウンロードしてローカル参照
-- 以後の散歩は圏外でも完全に動く
+- 地図タイルはOpenFreeMapからオンライン取得（MapLibreのキャッシュにより一度表示した範囲は圏外でも出る）
+- ゲームロジック（記録・成長・判定）は圏外でも完全に動く
 
 ## 6. バックアップ（必須要件）
 
