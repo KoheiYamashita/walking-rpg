@@ -17,6 +17,7 @@ import io.ktor.http.headersOf
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -151,6 +152,58 @@ class HttpLlmConnectionTesterTest {
     }
 
     @Test
+    fun 例外の生メッセージは画面に出さない() = runTest {
+        // 例外メッセージには接続先URLやプロキシ設定など環境固有の文字列が混ざりうる
+        val raw = "Failed to connect to proxy.internal.example/10.0.0.1:8080"
+        val (tester, _) = tester { throw IllegalStateException(raw) }
+
+        val result = tester.test(anthropic)
+
+        assertIs<LlmConnectionTestResult.Failure>(result)
+        assertFalse(raw in result.message, result.message)
+        assertFalse("10.0.0.1" in result.message, result.message)
+    }
+
+    @Test
+    fun 通信失敗は例外の種別から定型文言に落とす() = runTest {
+        val cases = listOf(
+            Triple(
+                UnresolvedAddressException(),
+                LlmConnectionFailure.NETWORK,
+                "ホスト名を解決できませんでした",
+            ),
+            Triple(SocketTimeoutException(), LlmConnectionFailure.TIMEOUT, null),
+            Triple(SSLHandshakeException(), LlmConnectionFailure.NETWORK, "TLS"),
+            Triple(ConnectException(), LlmConnectionFailure.NETWORK, "接続できませんでした"),
+        )
+
+        cases.forEach { (error, expectedReason, expectedHint) ->
+            val (tester, _) = tester { throw error }
+            val result = tester.test(anthropic)
+
+            assertIs<LlmConnectionTestResult.Failure>(result)
+            assertEquals(expectedReason, result.reason, "${error::class.simpleName} の分類が違う")
+            assertFalse(RAW_MESSAGE in result.message, result.message)
+            if (expectedHint != null) {
+                assertTrue(expectedHint in result.message, result.message)
+            }
+        }
+    }
+
+    @Test
+    fun 原因側の例外種別も見る() = runTest {
+        // エンジンが数段ラップしてくることがある
+        val (tester, _) = tester {
+            throw IllegalStateException(RAW_MESSAGE, UnresolvedAddressException())
+        }
+
+        val result = tester.test(anthropic)
+
+        assertIs<LlmConnectionTestResult.Failure>(result)
+        assertTrue("ホスト名を解決できませんでした" in result.message, result.message)
+    }
+
+    @Test
     fun 失敗しても再試行しない() = runTest {
         // キーが違うのに何度も投げない（レート制限を踏みに行かない）
         val (tester, requests) = tester { respondError(HttpStatusCode.ServiceUnavailable) }
@@ -160,3 +213,17 @@ class HttpLlmConnectionTesterTest {
         assertEquals(1, requests.size)
     }
 }
+
+/**
+ * 分類は例外の**型名**で行う（DNS失敗やTLSエラーの型はJVM / Darwinで違い、
+ * commonTest から実物を投げ分けられない）。ここでは本物と同じ名前のダミーを使う。
+ */
+private const val RAW_MESSAGE = "raw-message-should-not-be-shown"
+
+private class UnresolvedAddressException : Exception(RAW_MESSAGE)
+
+private class SocketTimeoutException : Exception(RAW_MESSAGE)
+
+private class SSLHandshakeException : Exception(RAW_MESSAGE)
+
+private class ConnectException : Exception(RAW_MESSAGE)

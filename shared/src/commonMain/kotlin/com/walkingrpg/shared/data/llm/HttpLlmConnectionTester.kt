@@ -73,11 +73,9 @@ internal class HttpLlmConnectionTester(
         } catch (timeout: HttpRequestTimeoutException) {
             return LlmConnectionTestResult.Failure(LlmConnectionFailure.TIMEOUT)
         } catch (error: Throwable) {
-            // 名前解決・接続拒否・TLSなど。原因の文字列はそのまま出さず種別だけ添える。
-            return LlmConnectionTestResult.Failure(
-                reason = LlmConnectionFailure.NETWORK,
-                detail = error.message?.take(MAX_DETAIL_LENGTH),
-            )
+            // 名前解決・接続拒否・TLSなど。例外の生メッセージは出さず種別だけ添える
+            // （URLやプロキシ設定など、環境固有の文字列が混ざりうるため）。
+            return classifyTransportError(error)
         }
 
         return response.toResult()
@@ -104,6 +102,42 @@ internal class HttpLlmConnectionTester(
         const val MAX_DETAIL_LENGTH = 300
     }
 }
+
+/**
+ * 通信そのものが成立しなかったときの分類。
+ *
+ * 例外の `message` は接続先URL・プロキシ設定・証明書の主体名など環境固有の文字列を
+ * 含みうるので**転送しない**。代わりに例外の種別だけを見て、定型の日本語文言を組み立てる。
+ *
+ * 型ではなく型名で判定しているのは、DNS解決失敗やTLSエラーの例外型が
+ * プラットフォーム（OkHttp / Darwin）ごとに違い、commonMain から型で捕まえられないため。
+ * 分からなければ種別を足さず、[LlmConnectionFailure.NETWORK] の定型文だけを返す。
+ */
+internal fun classifyTransportError(error: Throwable): LlmConnectionTestResult.Failure {
+    val typeNames = generateSequence(error) { current -> current.cause?.takeIf { it !== current } }
+        .take(MAX_CAUSE_DEPTH)
+        .mapNotNull { it::class.simpleName }
+        .joinToString(" ")
+
+    val (reason, detail) = when {
+        "UnresolvedAddress" in typeNames || "UnknownHost" in typeNames ->
+            LlmConnectionFailure.NETWORK to "原因: 接続先のホスト名を解決できませんでした（DNS）。"
+
+        "Timeout" in typeNames -> LlmConnectionFailure.TIMEOUT to null
+
+        "SSL" in typeNames || "TLS" in typeNames || "Certificate" in typeNames ->
+            LlmConnectionFailure.NETWORK to "原因: 安全な接続（TLS）を確立できませんでした。"
+
+        "Connect" in typeNames || "NoRouteToHost" in typeNames ->
+            LlmConnectionFailure.NETWORK to "原因: 接続先に接続できませんでした。"
+
+        else -> LlmConnectionFailure.NETWORK to null
+    }
+    return LlmConnectionTestResult.Failure(reason = reason, detail = detail)
+}
+
+/** 原因チェーンをたどる深さ。エンジンが数段ラップすることがあるので数段だけ見る。 */
+private const val MAX_CAUSE_DEPTH = 5
 
 /**
  * 疎通用のエンドポイント。ベースURLは各社の慣習に合わせて既定値を置いてあるので、
