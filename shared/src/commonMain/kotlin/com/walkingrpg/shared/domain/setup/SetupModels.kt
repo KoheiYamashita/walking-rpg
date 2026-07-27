@@ -45,7 +45,14 @@ data class LlmConnectionSettings(
     val baseUrl: String,
     val model: String,
     val apiKey: String,
-)
+) {
+    /** data class の既定実装は [apiKey] をそのまま出すので、伏せた形に差し替える。 */
+    override fun toString(): String =
+        "LlmConnectionSettings(format=$format, baseUrl=$baseUrl, model=$model, apiKey=$MASKED)"
+}
+
+/** 秘密をログ・例外メッセージに出さないための伏せ字。 */
+private const val MASKED = "***"
 
 /** 天候プロバイダの選択肢（architecture.md §1）。Provider実装そのものは #11 の領分。 */
 enum class WeatherProviderChoice(
@@ -61,7 +68,9 @@ enum class WeatherProviderChoice(
 data class WeatherSettings(
     val provider: WeatherProviderChoice = WeatherProviderChoice.OPEN_METEO,
     val apiKey: String = "",
-)
+) {
+    override fun toString(): String = "WeatherSettings(provider=$provider, apiKey=$MASKED)"
+}
 
 /**
  * 自宅位置とぼかし半径。
@@ -76,7 +85,11 @@ data class HomeAnchor(
     val latitude: Double,
     val longitude: Double,
     val blurRadiusMeters: Int,
-)
+) {
+    /** 座標は伏せる。ぼかし半径は秘密ではないので出してよい。 */
+    override fun toString(): String =
+        "HomeAnchor(lat=$MASKED, lon=$MASKED, blurRadiusMeters=$blurRadiusMeters)"
+}
 
 /** ぼかし半径の選択肢（UIのラジオボタンと同じ並び）。 */
 val HOME_BLUR_RADIUS_CHOICES: List<Int> = listOf(100, 200, 300)
