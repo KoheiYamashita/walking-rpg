@@ -1,11 +1,13 @@
 package com.walkingrpg.shared.domain.osm
 
 import com.walkingrpg.shared.domain.map.GeoPoint
-import com.walkingrpg.shared.domain.map.MapCamera
-import com.walkingrpg.shared.domain.map.MapCameraRepository
+import com.walkingrpg.shared.domain.walk.CurrentLocationRepository
+import com.walkingrpg.shared.domain.walk.LocationFix
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -44,9 +46,18 @@ class ImportOsmAreaUseCaseTest {
         override suspend fun pois() = poiById.values.toList()
     }
 
-    private inner class FakeCameraRepository : MapCameraRepository {
-        override suspend fun initialCamera() = MapCamera(center = center, zoom = 15.0)
+    /** 現在地。`null` は「権限がない・測位できない」。 */
+    private class FakeCurrentLocationRepository(private val fix: LocationFix?) :
+        CurrentLocationRepository {
+        override suspend fun currentFix(): LocationFix? = fix
     }
+
+    private fun fixAt(point: GeoPoint) = LocationFix(
+        timestampMs = 0L,
+        latitude = point.latitude,
+        longitude = point.longitude,
+        accuracyMeters = 8.0,
+    )
 
     private fun way(id: Long, highway: String, name: String? = null) = OsmWayCandidate(
         id = id,
@@ -64,12 +75,15 @@ class ImportOsmAreaUseCaseTest {
         location = GeoPoint(center.latitude + 0.0005, center.longitude + 0.0005),
     )
 
-    private fun useCase(snapshot: OsmAreaSnapshot, repository: FakeMasterRepository) =
-        ImportOsmAreaUseCase(
-            areaSource = FakeAreaSource(snapshot),
-            masterRepository = repository,
-            mapCameraRepository = FakeCameraRepository(),
-        )
+    private fun useCase(
+        snapshot: OsmAreaSnapshot,
+        repository: FakeMasterRepository,
+        fix: LocationFix? = fixAt(center),
+    ) = ImportOsmAreaUseCase(
+        areaSource = FakeAreaSource(snapshot),
+        masterRepository = repository,
+        currentLocationRepository = FakeCurrentLocationRepository(fix),
+    )
 
     private val snapshot = OsmAreaSnapshot(
         ways = listOf(
@@ -140,13 +154,36 @@ class ImportOsmAreaUseCaseTest {
     }
 
     @Test
-    fun 中心と半径は対象圏としてそのまま渡る() = runTest {
+    fun 現在地が対象圏の中心になる() = runTest {
         val source = FakeAreaSource(snapshot)
-        val useCase = ImportOsmAreaUseCase(source, FakeMasterRepository(), FakeCameraRepository())
+        val here = GeoPoint(latitude = 12.5, longitude = 34.5)
+        val useCase = ImportOsmAreaUseCase(
+            areaSource = source,
+            masterRepository = FakeMasterRepository(),
+            currentLocationRepository = FakeCurrentLocationRepository(fixAt(here)),
+        )
 
         useCase(radiusMeters = 800)
 
-        assertEquals(OsmArea(center = center, radiusMeters = 800), source.requestedArea)
+        assertEquals(OsmArea(center = here, radiusMeters = 800), source.requestedArea)
+    }
+
+    @Test
+    fun 現在地が取れなければ通信もDB書き込みもせずエラーになる() = runTest {
+        val source = FakeAreaSource(snapshot)
+        val repository = FakeMasterRepository()
+        val useCase = ImportOsmAreaUseCase(
+            areaSource = source,
+            masterRepository = repository,
+            currentLocationRepository = FakeCurrentLocationRepository(fix = null),
+        )
+
+        assertFailsWith<OsmAreaCenterUnavailableException> { useCase() }
+
+        // 当てずっぽうの座標で取りに行かない＝無関係なマスタが書き込まれない
+        assertNull(source.requestedArea)
+        assertEquals(0, repository.saveCount)
+        assertEquals(OsmMasterCounts(wayCount = 0, poiCount = 0), repository.counts())
     }
 
     @Test

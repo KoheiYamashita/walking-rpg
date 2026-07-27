@@ -268,7 +268,7 @@ private fun OsmImportCard(state: OsmImportUiState, onImport: () -> Unit) {
         ) {
             Text(text = "OSMマスタ（デバッグ）", style = MaterialTheme.typography.titleMedium)
             Text(
-                text = "対象圏の中心はローカル設定（local.properties）の初期表示位置、半径は500m。",
+                text = "対象圏の中心は現在地、半径は500m。位置情報の権限が要ります。",
                 style = MaterialTheme.typography.bodySmall,
             )
 

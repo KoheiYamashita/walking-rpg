@@ -1,6 +1,7 @@
 package com.walkingrpg.shared.domain.osm
 
-import com.walkingrpg.shared.domain.map.MapCameraRepository
+import com.walkingrpg.shared.domain.map.GeoPoint
+import com.walkingrpg.shared.domain.walk.CurrentLocationRepository
 
 /**
  * 対象圏のOSMマスタを取り込むUseCase（issue #5・architecture.md §5）。
@@ -9,8 +10,13 @@ import com.walkingrpg.shared.domain.map.MapCameraRepository
  * 判定と変換はこの層の純関数（[PoiSafetyFilter] / [GeoDistance]）で、
  * 通信と永続化はインターフェースの向こう側にある。
  *
- * 中心座標は地図の初期表示位置を使い回す（[MapCameraRepository]）。
- * 実在の座標はリポジトリに置かないので、値はGit管理外のローカル設定から来る。
+ * **対象圏の中心は現在地のみ**。対象圏は「いま自分がいる場所の周り」であり、
+ * それを設定ファイルに書く仕組みを持てば、ユーザー固有の座標をリポジトリに
+ * 持ち込む経路ができてしまう（プライバシー方針）。
+ *
+ * 現在地が取れない（権限がない・測位できない）ときは
+ * [OsmAreaCenterUnavailableException] で止める。当てずっぽうの座標で
+ * 取りに行っても、無関係な土地のマスタが書き込まれるだけで誰も得をしない。
  *
  * 保存はIDをキーにした置き換えなので、何度実行しても件数は増えない
  * （architecture.md §0「冪等で再計算できる」）。
@@ -18,13 +24,12 @@ import com.walkingrpg.shared.domain.map.MapCameraRepository
 class ImportOsmAreaUseCase(
     private val areaSource: OsmAreaSource,
     private val masterRepository: OsmMasterRepository,
-    private val mapCameraRepository: MapCameraRepository,
+    private val currentLocationRepository: CurrentLocationRepository,
 ) {
     suspend operator fun invoke(radiusMeters: Int = DEFAULT_RADIUS_METERS): OsmImportResult {
-        val area = OsmArea(
-            center = mapCameraRepository.initialCamera().center,
-            radiusMeters = radiusMeters,
-        )
+        val fix = currentLocationRepository.currentFix() ?: throw OsmAreaCenterUnavailableException()
+        val center = GeoPoint(latitude = fix.latitude, longitude = fix.longitude)
+        val area = OsmArea(center = center, radiusMeters = radiusMeters)
         val snapshot = areaSource.fetchArea(area)
 
         val ways = snapshot.ways

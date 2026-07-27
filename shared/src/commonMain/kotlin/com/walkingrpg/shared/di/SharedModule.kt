@@ -8,7 +8,6 @@ import com.walkingrpg.shared.data.WalkRecorderImpl
 import com.walkingrpg.shared.data.WalkSessionExporterImpl
 import com.walkingrpg.shared.data.WalkSessionRepositoryImpl
 import com.walkingrpg.shared.data.createDatabase
-import com.walkingrpg.shared.data.map.MapCameraRepositoryImpl
 import com.walkingrpg.shared.data.osm.OsmMasterRepositoryImpl
 import com.walkingrpg.shared.data.osm.OverpassConfig
 import com.walkingrpg.shared.data.osm.OverpassOsmAreaSource
@@ -17,7 +16,6 @@ import com.walkingrpg.shared.domain.Clock
 import com.walkingrpg.shared.domain.GetPlatformNameUseCase
 import com.walkingrpg.shared.domain.SystemInfoRepository
 import com.walkingrpg.shared.domain.map.GetMapSceneUseCase
-import com.walkingrpg.shared.domain.map.MapCameraRepository
 import com.walkingrpg.shared.domain.osm.GetOsmMasterCountsUseCase
 import com.walkingrpg.shared.domain.osm.ImportOsmAreaUseCase
 import com.walkingrpg.shared.domain.osm.OsmAreaSource
@@ -99,7 +97,6 @@ val sharedModule = module {
     factoryOf(::ExportWalkSessionUseCase)
 
     // --- 地図（issue #4） ---
-    singleOf(::MapCameraRepositoryImpl) bind MapCameraRepository::class
     // 現在地は記録用の測位（WalkRecorder）と同じ LocationProvider / 権限判定を使い回す
     single<CurrentLocationRepository> { CurrentLocationRepositoryImpl(get(), get()) }
     factoryOf(::GetMapSceneUseCase)

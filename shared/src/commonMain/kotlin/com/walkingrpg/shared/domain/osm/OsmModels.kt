@@ -93,6 +93,17 @@ data class OsmArea(
     val radiusMeters: Int,
 )
 
+/**
+ * 対象圏の中心（＝現在地）が取れないとき。
+ *
+ * 権限がない・測位できない状態。当てずっぽうの座標で取りに行っても無関係な
+ * マスタが書き込まれるだけなので、通信する前に止める。
+ */
+class OsmAreaCenterUnavailableException : Exception(
+    "現在地が取れないため取り込めません。位置情報の権限を許可して、" +
+        "屋外など測位できる場所でもう一度お試しください。",
+)
+
 /** 取り込み1回の結果。デバッグUIと監査値の突き合わせに使う。 */
 data class OsmImportResult(
     val wayCount: Int,
