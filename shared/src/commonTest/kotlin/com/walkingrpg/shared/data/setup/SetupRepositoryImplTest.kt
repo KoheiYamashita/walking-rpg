@@ -119,8 +119,30 @@ class SetupRepositoryImplTest {
     fun 完了フラグは初期状態でfalse() = runTest {
         assertFalse(repository.isSetupCompleted())
 
+        repository.saveLlmConnection(llmSettings)
         repository.markSetupCompleted()
 
         assertTrue(repository.isSetupCompleted())
+    }
+
+    @Test
+    fun 完了フラグが復元されてもキーが無ければ未完了扱い() = runTest {
+        // クラウド復元・機種変更：AppSettings（バックアップ対象）は戻るが
+        // SecureStorageは設計どおり戻らない
+        repository.saveLlmConnection(llmSettings)
+        repository.markSetupCompleted()
+        secureStorage.snapshot().keys.forEach { secureStorage.remove(it) }
+
+        assertFalse(
+            repository.isSetupCompleted(),
+            "APIキーが無いのに完了扱いになっている（ゲートを素通りする）",
+        )
+    }
+
+    @Test
+    fun キーがあってもフラグが無ければ未完了() = runTest {
+        repository.saveLlmConnection(llmSettings)
+
+        assertFalse(repository.isSetupCompleted())
     }
 }

@@ -90,8 +90,21 @@ internal class SetupRepositoryImpl(
         secureStorage.put(KEY_HOME_BLUR_RADIUS, anchor.blurRadiusMeters.toString())
     }
 
+    /**
+     * 完了フラグ（[AppSettings]）だけでなく、**LLMのAPIキーが実在するか**も見る。
+     *
+     * [AppSettings] はOSバックアップの対象なので、機種変更・クラウド復元では
+     * 完了フラグだけが戻り、[SecureStorage] 側のキーは設計どおり戻らない。
+     * フラグだけを信じるとキーが無いままホームに入れてしまい、
+     * 「疎通が通るまでプレイを開始できない」（design.md §9）が破れる。
+     *
+     * キーが無い＝未完了として扱えば、ウィザードが保存済みの
+     * フォーマット・ベースURL・モデル名を読み直した状態で再開するので、
+     * ユーザーはAPIキーの再入力と疎通テストだけで復帰できる。
+     */
     override suspend fun isSetupCompleted(): Boolean =
-        appSettings.getBoolean(KEY_SETUP_COMPLETED, false)
+        appSettings.getBoolean(KEY_SETUP_COMPLETED, false) &&
+            secureStorage.get(KEY_LLM_API_KEY) != null
 
     override suspend fun markSetupCompleted() {
         appSettings.putBoolean(KEY_SETUP_COMPLETED, true)
