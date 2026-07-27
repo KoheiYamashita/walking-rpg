@@ -256,8 +256,9 @@ private fun RecordingCard(recording: WalkRecordingSnapshot) {
 /**
  * OSMマスタ取り込みのデバッグUI（issue #5）。
  *
- * 本来の導線は初回セットアップ（issue #6）が作る。ここは実機で
- * 「取れた件数が監査値（design.md §9）と大きく乖離しないか」を確かめるための仮表示。
+ * 本導線は初回セットアップ（issue #6）に移ったが、**再取り込みの暫定手段として
+ * ここに残してある**（対象圏を広げたい・取り込みが途中で失敗した場合の逃げ道）。
+ * TODO(#20): 設定画面ができたらそちらへ移し、ホームからは外す。
  */
 @Composable
 private fun OsmImportCard(state: OsmImportUiState, onImport: () -> Unit) {
