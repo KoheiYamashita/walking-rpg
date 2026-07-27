@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android 11以前（API 30以下）の自動バックアップ設定。
+
+  歩行ログのDBはバックアップに乗せる（design.md §9「絶対に消さない」の単一障害点対策）。
+  一方、APIキーと自宅座標を入れた walking_rpg_secrets.xml は **除外する**：
+
+  - 鍵は Android Keystore にあり端末外へ出ないので、暗号文だけ運んでも復号できない
+  - そもそも秘密を端末外に持ち出さないほうが事故がない（design.md §9）
+
+  ファイル名は AndroidSecureStorage.PREFS_NAME と一致させること。
+-->
+<full-backup-content>
+    <exclude
+        domain="sharedpref"
+        path="walking_rpg_secrets.xml" />
+</full-backup-content>

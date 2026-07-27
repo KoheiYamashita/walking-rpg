@@ -1,14 +1,18 @@
 package com.walkingrpg.shared.di
 
+import com.walkingrpg.shared.platform.AppSettings
 import com.walkingrpg.shared.platform.DatabaseDriverFactory
 import com.walkingrpg.shared.platform.FileShare
+import com.walkingrpg.shared.platform.IosAppSettings
 import com.walkingrpg.shared.platform.IosDatabaseDriverFactory
 import com.walkingrpg.shared.platform.IosFileShare
 import com.walkingrpg.shared.platform.IosLocationPermissionController
 import com.walkingrpg.shared.platform.IosLocationProvider
+import com.walkingrpg.shared.platform.IosSecureStorage
 import com.walkingrpg.shared.platform.IosSessionKeeper
 import com.walkingrpg.shared.platform.LocationPermissionController
 import com.walkingrpg.shared.platform.LocationProvider
+import com.walkingrpg.shared.platform.SecureStorage
 import com.walkingrpg.shared.platform.SessionKeeper
 import org.koin.core.module.Module
 import org.koin.dsl.module
@@ -24,4 +28,8 @@ actual val platformModule: Module = module {
     single<SessionKeeper> { IosSessionKeeper() }
     single<FileShare> { IosFileShare() }
     single<DatabaseDriverFactory> { IosDatabaseDriverFactory() }
+
+    // --- 設定・キー保管（issue #6） ---
+    single<SecureStorage> { IosSecureStorage() }
+    single<AppSettings> { IosAppSettings() }
 }
