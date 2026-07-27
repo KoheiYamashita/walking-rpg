@@ -12,6 +12,8 @@ CREATE TABLE poi (
 
 CREATE INDEX poi_kind ON poi(kind);
 
+-- 取り込みは deleteAllPois → upsertPoi を1トランザクションで回す（マスタの作り直し）。
+-- 差分更新にすると、あとから配置禁止タグが付いた地物が消えずに残ってしまう。
 upsertPoi:
 INSERT OR REPLACE INTO poi(id, kind, tags, lat, lon)
 VALUES (?, ?, ?, ?, ?);

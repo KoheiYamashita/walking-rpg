@@ -59,10 +59,16 @@ class ImportOsmAreaUseCaseTest {
         accuracyMeters = 8.0,
     )
 
-    private fun way(id: Long, highway: String, name: String? = null) = OsmWayCandidate(
+    private fun way(
+        id: Long,
+        highway: String,
+        name: String? = null,
+        access: String? = null,
+    ) = OsmWayCandidate(
         id = id,
         name = name,
         highway = highway,
+        access = access,
         geometry = listOf(
             GeoPoint(center.latitude, center.longitude),
             GeoPoint(center.latitude, center.longitude + 0.001),
@@ -92,6 +98,7 @@ class ImportOsmAreaUseCaseTest {
             way(3, "service"),
             way(4, "primary"),
             way(5, "path"),
+            way(6, "footway", access = "private"),
         ),
         pois = listOf(
             poi("node/1", "leisure" to "park"),
@@ -109,7 +116,7 @@ class ImportOsmAreaUseCaseTest {
         val result = useCase(snapshot, repository)()
 
         assertEquals(3, result.wayCount)
-        assertEquals(2, result.excludedWayCount)
+        assertEquals(3, result.excludedWayCount)
         assertEquals(
             listOf(1L, 2L, 5L),
             repository.ways().map { it.id }.sorted(),
@@ -184,6 +191,27 @@ class ImportOsmAreaUseCaseTest {
         assertNull(source.requestedArea)
         assertEquals(0, repository.saveCount)
         assertEquals(OsmMasterCounts(wayCount = 0, poiCount = 0), repository.counts())
+    }
+
+    @Test
+    fun 私有地のwayは取り込まない() = runTest {
+        val repository = FakeMasterRepository()
+
+        useCase(snapshot, repository)()
+
+        // access=private の道は歩けない＝成長単位にしても通過が記録されない
+        assertTrue(repository.ways().none { it.id == 6L }, "私有地のwayが入っている")
+    }
+
+    @Test
+    fun accessタグの無いwayは通る() = runTest {
+        val repository = FakeMasterRepository()
+        val onlyPlain = OsmAreaSnapshot(ways = listOf(way(7, "residential")))
+
+        val result = useCase(onlyPlain, repository)()
+
+        assertEquals(1, result.wayCount)
+        assertEquals(0, result.excludedWayCount)
     }
 
     @Test

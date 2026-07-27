@@ -15,9 +15,15 @@ import kotlinx.serialization.json.Json
 /**
  * [OsmMasterRepository] のSQLDelight実装。
  *
- * 保存は1トランザクション＋OSMのIDをキーにした `INSERT OR REPLACE` なので、
- * 同じ対象圏を何度取り込んでも件数は増えない（冪等）。
- * 途中で失敗したときに半端なマスタが残らないのもトランザクションの効果。
+ * 保存は**全削除→挿入を1トランザクション**で行う（マスタの作り直し）。
+ * 差分upsertにすると、OSM側で廃止された地物や、安全フィルタで弾かれるように
+ * なった地物（例：あとから `access=private` が付いたPOI）が消えずに残り、
+ * 「`poi` にあるのは配置してよい場所」という前提が崩れる。中心を移して
+ * 取り直したときに旧対象圏のデータが溜まり続ける問題も同時に消える。
+ *
+ * マスタは真実の源ではなく、いつでも取り直せる（Way.sq / Poi.sq のコメント）ので
+ * 作り直して困るものは無い。途中で失敗しても直前の状態のまま残るのは
+ * トランザクションの効果。
  */
 internal class OsmMasterRepositoryImpl(
     private val database: WalkingRpgDatabase,
@@ -29,6 +35,8 @@ internal class OsmMasterRepositoryImpl(
 
     override suspend fun save(ways: List<Way>, pois: List<Poi>): Unit = withContext(dispatcher) {
         database.transaction {
+            this@OsmMasterRepositoryImpl.ways.deleteAllWays()
+            this@OsmMasterRepositoryImpl.pois.deleteAllPois()
             ways.forEach { way ->
                 this@OsmMasterRepositoryImpl.ways.upsertWay(
                     id = way.id,

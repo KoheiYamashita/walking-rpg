@@ -16,7 +16,8 @@ CREATE TABLE way (
 
 CREATE INDEX way_highway ON way(highway);
 
--- 再取り込みで件数が増えないよう、OSMのIDをキーに置き換える（冪等）
+-- 取り込みは deleteAllWays → upsertWay を1トランザクションで回す（マスタの作り直し）。
+-- OR REPLACE は同じ応答に同一IDが二度出てきた場合の保険。
 upsertWay:
 INSERT OR REPLACE INTO way(id, name, highway, geometry, length_m)
 VALUES (?, ?, ?, ?, ?);

@@ -17,7 +17,7 @@ internal object OverpassResponseParser {
     val json: Json = Json { ignoreUnknownKeys = true }
 
     fun parseWays(body: String): List<OsmWayCandidate> =
-        json.decodeFromString<OverpassResponse>(body).elements
+        decodeComplete(body).elements
             .filter { it.type == "way" }
             .mapNotNull { element ->
                 val highway = element.tags["highway"] ?: return@mapNotNull null
@@ -25,12 +25,13 @@ internal object OverpassResponseParser {
                     id = element.id,
                     name = element.tags["name"],
                     highway = highway,
+                    access = element.tags["access"],
                     geometry = element.geometry.map { GeoPoint(it.lat, it.lon) },
                 )
             }
 
     fun parsePois(body: String): List<OsmPoiCandidate> =
-        json.decodeFromString<OverpassResponse>(body).elements
+        decodeComplete(body).elements
             .mapNotNull { element ->
                 if (element.tags.isEmpty()) return@mapNotNull null
                 val location = element.location() ?: return@mapNotNull null
@@ -41,6 +42,21 @@ internal object OverpassResponseParser {
                     location = location,
                 )
             }
+
+    /**
+     * 応答をデコードし、**途中までの結果なら例外にする**。
+     *
+     * Overpassはサーバ側タイムアウト・メモリ超過でもHTTP 200を返し、
+     * `remark` に理由を入れた部分応答を寄こす。取り込みはマスタを作り直すので、
+     * これを正常扱いすると欠けたマスタで上書きしてしまう。
+     */
+    private fun decodeComplete(body: String): OverpassResponse {
+        val response = json.decodeFromString<OverpassResponse>(body)
+        response.remark?.let { remark ->
+            throw OverpassPartialResponseException(remark)
+        }
+        return response
+    }
 
     /** node は `lat`/`lon`、way・relation は `out center` の重心を使う。 */
     private fun OverpassElement.location(): GeoPoint? {

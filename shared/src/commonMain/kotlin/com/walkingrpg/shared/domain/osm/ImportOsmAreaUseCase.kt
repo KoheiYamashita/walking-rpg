@@ -33,7 +33,7 @@ class ImportOsmAreaUseCase(
         val snapshot = areaSource.fetchArea(area)
 
         val ways = snapshot.ways
-            .filter { it.highway in WALKABLE_HIGHWAY_VALUES && it.geometry.size >= 2 }
+            .filter { it.isWalkable() }
             .map { candidate ->
                 Way(
                     id = candidate.id,
@@ -71,6 +71,18 @@ class ImportOsmAreaUseCase(
             excludedUnclassifiedPoiCount = unclassifiedCount,
         )
     }
+
+    /**
+     * 成長単位（way）として取り込む道か。
+     *
+     * 種別が歩行対象で、頂点が2つ以上あって、私有地でないこと。
+     * `access=private` の道は歩けないので、成長単位にしても通過が記録されない
+     * ままマスタに残るだけになる（POI側と同じ判定を使う）。
+     */
+    private fun OsmWayCandidate.isWalkable(): Boolean =
+        highway in WALKABLE_HIGHWAY_VALUES &&
+            geometry.size >= 2 &&
+            !PoiSafetyFilter.isForbiddenAccess(access)
 
     companion object {
         /** MVPの対象圏（design.md §9「MVP対象圏 500m」）。 */

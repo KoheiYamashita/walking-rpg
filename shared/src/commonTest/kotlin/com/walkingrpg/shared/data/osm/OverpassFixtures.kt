@@ -59,6 +59,38 @@ internal object OverpassFixtures {
                 { "lat": 12.0045000, "lon": 34.0030000 }
               ],
               "tags": { "barrier": "fence" }
+            },
+            {
+              "type": "way",
+              "id": 105,
+              "geometry": [
+                { "lat": 12.0050000, "lon": 34.0040000 },
+                { "lat": 12.0055000, "lon": 34.0040000 }
+              ],
+              "tags": { "highway": "footway", "access": "private" }
+            }
+          ]
+        }
+    """.trimIndent()
+
+    /**
+     * サーバ側タイムアウトで打ち切られた部分応答。
+     * **HTTP 200** のまま `remark` と「途中まで」の要素が返る。
+     */
+    val PARTIAL_RESPONSE_JSON = """
+        {
+          "version": 0.6,
+          "generator": "Overpass API (fixture)",
+          "remark": "runtime error: Query timed out in \"query\" at line 2 after 60 seconds.",
+          "elements": [
+            {
+              "type": "way",
+              "id": 101,
+              "geometry": [
+                { "lat": 12.0000000, "lon": 34.0000000 },
+                { "lat": 12.0005000, "lon": 34.0000000 }
+              ],
+              "tags": { "highway": "residential" }
             }
           ]
         }

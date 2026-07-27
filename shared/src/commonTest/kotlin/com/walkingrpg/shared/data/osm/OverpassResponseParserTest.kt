@@ -2,6 +2,7 @@ package com.walkingrpg.shared.data.osm
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -13,7 +14,7 @@ class OverpassResponseParserTest {
         val ways = OverpassResponseParser.parseWays(OverpassFixtures.WAYS_JSON)
 
         // node要素と highway タグの無いwayは候補にならない
-        assertEquals(listOf(101L, 102L, 103L), ways.map { it.id })
+        assertEquals(listOf(101L, 102L, 103L, 105L), ways.map { it.id })
     }
 
     @Test
@@ -80,6 +81,27 @@ class OverpassResponseParserTest {
         val ways = OverpassResponseParser.parseWays(OverpassFixtures.WAYS_JSON)
 
         assertTrue(ways.isNotEmpty())
+    }
+
+    @Test
+    fun accessタグが候補に載る() {
+        val ways = OverpassResponseParser.parseWays(OverpassFixtures.WAYS_JSON)
+
+        // 私有地の判断はドメイン層でするので、パーサは値を運ぶだけ
+        assertEquals("private", ways.first { it.id == 105L }.access)
+        assertNull(ways.first { it.id == 101L }.access)
+    }
+
+    @Test
+    fun remark付きの部分応答は例外になる() {
+        // Overpassはサーバ側タイムアウトでもHTTP 200を返す。
+        // 欠けたデータでマスタを作り直さないよう、ここで止める
+        assertFailsWith<OverpassPartialResponseException> {
+            OverpassResponseParser.parseWays(OverpassFixtures.PARTIAL_RESPONSE_JSON)
+        }
+        assertFailsWith<OverpassPartialResponseException> {
+            OverpassResponseParser.parsePois(OverpassFixtures.PARTIAL_RESPONSE_JSON)
+        }
     }
 
     @Test

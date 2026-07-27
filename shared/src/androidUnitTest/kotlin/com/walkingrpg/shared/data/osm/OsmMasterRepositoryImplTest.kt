@@ -13,8 +13,8 @@ import kotlin.test.assertEquals
 
 /**
  * `Way.sq` / `Poi.sq` を実際のSQLite（インメモリ）で検証する。
- * 見たいのは「取り込みが冪等か」＝再実行で件数が増えず、内容が最新に置き換わること。
- * 座標はすべて架空。
+ * 見たいのは「取り込みがマスタを作り直すか」＝再実行で件数が増えず、
+ * 前回の残骸も残らないこと。座標はすべて架空。
  */
 class OsmMasterRepositoryImplTest {
 
@@ -93,13 +93,27 @@ class OsmMasterRepositoryImplTest {
     }
 
     @Test
-    fun 対象圏が広がってもwayは足し込まれる() = runTest {
+    fun 取り込みに含まれなくなった地物は消える() = runTest {
         val repository = repository()
+        repository.save(listOf(way(1), way(2)), listOf(poi("node/1"), poi("node/2")))
 
-        // 500m圏 → 1km圏の取り直し。既存は置き換わり、新規だけ増える
-        repository.save(listOf(way(1), way(2)), emptyList())
-        repository.save(listOf(way(2), way(3)), emptyList())
+        // OSM側で廃止された、あるいは配置禁止タグが付いて弾かれるようになった想定
+        repository.save(listOf(way(1)), listOf(poi("node/1")))
 
-        assertEquals(listOf(1L, 2L, 3L), repository.ways().map { it.id })
+        assertEquals(listOf(1L), repository.ways().map { it.id })
+        assertEquals(listOf("node/1"), repository.pois().map { it.id })
+    }
+
+    @Test
+    fun 中心を移して取り直すと旧対象圏のデータが残らない() = runTest {
+        val repository = repository()
+        repository.save(listOf(way(1), way(2)), listOf(poi("node/1")))
+
+        // 引っ越し・旅行先での取り込み。まったく別のway・POIが返ってくる
+        repository.save(listOf(way(10), way(11)), listOf(poi("node/10")))
+
+        assertEquals(listOf(10L, 11L), repository.ways().map { it.id })
+        assertEquals(listOf("node/10"), repository.pois().map { it.id })
+        assertEquals(OsmMasterCounts(wayCount = 2, poiCount = 1), repository.counts())
     }
 }

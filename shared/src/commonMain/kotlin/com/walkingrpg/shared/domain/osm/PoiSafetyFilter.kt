@@ -49,7 +49,7 @@ object PoiSafetyFilter {
         }
         // 私有地・立入禁止。`access=yes/permissive/customers` などは通す。
         tags["access"]?.let { access ->
-            if (access in FORBIDDEN_ACCESS_VALUES) return "access=$access"
+            if (isForbiddenAccess(access)) return "access=$access"
         }
         // 線路そのもの（踏切・駅は配置可能なので railway キー全体は禁止にしない）。
         tags["railway"]?.let { railway ->
@@ -61,6 +61,14 @@ object PoiSafetyFilter {
         }
         return null
     }
+
+    /**
+     * `access` タグが「立ち入ってよいと言えない」値か。
+     *
+     * way（私有地内の通路）の判定にも使う。歩けない道を成長単位にしても、
+     * 通過が記録されないまま残るだけで害にしかならない。
+     */
+    fun isForbiddenAccess(access: String?): Boolean = access in FORBIDDEN_ACCESS_VALUES
 
     /** 図鑑カテゴリへの分類。素材にならない地物は `null`。 */
     fun classify(tags: Map<String, String>): PoiKind? {
@@ -132,6 +140,12 @@ object PoiSafetyFilter {
         "power",
     )
 
+    /**
+     * 立ち入ってよいと言えない `access` の値。
+     *
+     * POIとwayで同じ判定を使う（[isForbiddenAccess]）。私有地の判定基準が
+     * 2箇所に散ると、片方だけ直して食い違う。
+     */
     private val FORBIDDEN_ACCESS_VALUES: Set<String> = setOf("private", "no", "permit")
 
     private val FORBIDDEN_BUILDING_VALUES: Set<String> = setOf(

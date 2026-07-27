@@ -61,7 +61,7 @@ class OverpassOsmAreaSourceTest {
         val snapshot = source.fetchArea(area)
 
         assertEquals(2, queries.size)
-        assertEquals(listOf(101L, 102L, 103L), snapshot.ways.map { it.id })
+        assertEquals(listOf(101L, 102L, 103L, 105L), snapshot.ways.map { it.id })
         assertTrue(snapshot.pois.any { it.id == "way/202" })
     }
 
@@ -107,6 +107,16 @@ class OverpassOsmAreaSourceTest {
 
         // 1本目：失敗＋再試行の2回、2本目（POI）：1回
         assertEquals(3, attempts)
+    }
+
+    @Test
+    fun 部分応答は成功扱いにしない() = runTest {
+        // HTTP 200 で返ってくるのでステータスでは弾けない
+        val (source, _) = source {
+            respond(OverpassFixtures.PARTIAL_RESPONSE_JSON, HttpStatusCode.OK, jsonHeaders)
+        }
+
+        assertFailsWith<OverpassPartialResponseException> { source.fetchArea(area) }
     }
 
     @Test

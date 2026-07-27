@@ -10,7 +10,17 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.parameters
 
 /** Overpassとのやり取りが成立しなかったとき（HTTPエラー等）。 */
-class OverpassException(message: String) : Exception(message)
+open class OverpassException(message: String) : Exception(message)
+
+/**
+ * Overpassが「途中までの結果」を返したとき（応答の `remark` 付き）。
+ *
+ * サーバ側タイムアウト・メモリ超過で起きる。HTTPは200なので、これを検出しないと
+ * 欠けたデータで正常にマスタを作り直してしまう。混雑が原因なので時間を置けば通る。
+ */
+class OverpassPartialResponseException(remark: String) : OverpassException(
+    "Overpassが混雑しています。しばらくしてから再試行してください。（$remark）",
+)
 
 /**
  * Overpass APIから対象圏を取得する [OsmAreaSource] 実装。

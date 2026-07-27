@@ -15,6 +15,14 @@ import kotlinx.serialization.Serializable
 @Serializable
 internal data class OverpassResponse(
     val elements: List<OverpassElement> = emptyList(),
+    /**
+     * サーバ側で問題が起きたときの注記。
+     *
+     * Overpassはサーバ側タイムアウト・メモリ超過でも **HTTP 200 のまま**
+     * ここに理由を入れた「途中まで」の応答を返す。これを正常扱いすると
+     * 欠けたマスタで作り直してしまうので、非nullなら取り込みを中断する。
+     */
+    val remark: String? = null,
 )
 
 @Serializable

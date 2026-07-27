@@ -41,11 +41,16 @@ enum class PoiKind {
     LANDMARK,
 }
 
-/** Overpassから取れた生のway1本（安全・対象の判定前）。 */
+/**
+ * Overpassから取れた生のway1本（安全・対象の判定前）。
+ *
+ * @param access `access` タグの値。私有地内の通路を弾くために使う（[PoiSafetyFilter]）。
+ */
 data class OsmWayCandidate(
     val id: Long,
     val name: String?,
     val highway: String,
+    val access: String? = null,
     val geometry: List<GeoPoint>,
 )
 
