@@ -2,6 +2,7 @@ package com.walkingrpg.app.ui.setup
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.walkingrpg.shared.domain.osm.GetOsmMasterCountsUseCase
 import com.walkingrpg.shared.domain.osm.ImportOsmAreaUseCase
 import com.walkingrpg.shared.domain.osm.OsmImportResult
 import com.walkingrpg.shared.domain.setup.CompleteSetupUseCase
@@ -86,7 +87,24 @@ data class SetupUiState(
 
     internal fun currentWeatherSettings(): WeatherSettings =
         WeatherSettings(provider = weatherProvider, apiKey = weatherApiKey)
+
+    /**
+     * data class の既定実装はAPIキーをそのまま出してしまうので、伏せた形に差し替える。
+     * 上のKDocの約束（キーを他の経路に流さない）を実装でも守るため。
+     */
+    override fun toString(): String = "SetupUiState(" +
+        "isLoading=$isLoading, step=$step, progress=$progress, " +
+        "llmFormat=$llmFormat, baseUrl=$baseUrl, model=$model, apiKey=$MASKED, " +
+        "isTestingLlm=$isTestingLlm, llmError=$llmError, " +
+        "weatherProvider=$weatherProvider, weatherApiKey=$MASKED, weatherError=$weatherError, " +
+        "permission=$permission, homeBlurRadiusMeters=$homeBlurRadiusMeters, " +
+        "isRegisteringHome=$isRegisteringHome, homeRegistered=$homeRegistered, " +
+        "homeError=$homeError, isImporting=$isImporting, importResult=$importResult, " +
+        "importError=$importError)"
 }
+
+/** 秘密をログに出さないための伏せ字。 */
+private const val MASKED = "***"
 
 /**
  * 初回セットアップのViewModel（issue #6）。
@@ -103,6 +121,7 @@ class SetupViewModel(
     private val updateHomeBlurRadius: UpdateHomeBlurRadiusUseCase,
     private val completeSetup: CompleteSetupUseCase,
     private val importOsmArea: ImportOsmAreaUseCase,
+    private val getOsmMasterCounts: GetOsmMasterCountsUseCase,
     observeLocationPermission: ObserveLocationPermissionUseCase,
     private val requestLocationPermission: RequestLocationPermissionUseCase,
     private val refreshLocationPermission: RefreshLocationPermissionUseCase,
@@ -114,9 +133,11 @@ class SetupViewModel(
     init {
         viewModelScope.launch {
             val saved = loadSetupSettings()
+            val progress = restoredProgress(saved.llm != null, saved.home != null)
             _uiState.update { state ->
                 state.copy(
                     isLoading = false,
+                    step = resumeStep(progress),
                     llmFormat = saved.llm?.format ?: state.llmFormat,
                     baseUrl = saved.llm?.baseUrl ?: state.baseUrl,
                     model = saved.llm?.model ?: state.model,
@@ -126,7 +147,7 @@ class SetupViewModel(
                     homeBlurRadiusMeters = saved.home?.blurRadiusMeters
                         ?: state.homeBlurRadiusMeters,
                     homeRegistered = saved.home != null,
-                    progress = state.progress.copy(homeRegistered = saved.home != null),
+                    progress = progress,
                 )
             }
         }
@@ -139,6 +160,45 @@ class SetupViewModel(
 
     fun onScreenResumed() {
         refreshLocationPermission()
+    }
+
+    // --- 再開時の進捗復元 ---
+
+    /**
+     * 永続化された事実から進捗を復元する（プロセス再生成でやり直させないため）。
+     *
+     * - **保存済みのLLM設定＝疎通済み**。[TestLlmConnectionUseCase] は疎通が通ったときしか
+     *   保存しないので、「保存されている＝一度は通った設定」が保たれている
+     * - **OSMマスタが端末DBに入っている＝取り込み済み**。取り込みはマスタを作り直す
+     *   （冪等）ので、件数が入っていれば対象圏は揃っている
+     */
+    private suspend fun restoredProgress(
+        hasSavedLlm: Boolean,
+        hasSavedHome: Boolean,
+    ): SetupProgress = SetupProgress(
+        llmVerified = hasSavedLlm,
+        homeRegistered = hasSavedHome,
+        areaImported = hasImportedArea(),
+    )
+
+    private suspend fun hasImportedArea(): Boolean = try {
+        val counts = getOsmMasterCounts()
+        counts.wayCount > 0 || counts.poiCount > 0
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (_: Throwable) {
+        // 件数が読めないだけなら未取り込み扱いでよい（取り込みは冪等なのでやり直せる）
+        false
+    }
+
+    /** 復元した進捗から、最初の未完了ステップへ。何も残っていなければ「ようこそ」から。 */
+    private fun resumeStep(progress: SetupProgress): SetupStep = when {
+        !progress.llmVerified && !progress.areaImported && !progress.homeRegistered ->
+            SetupStep.WELCOME
+
+        !progress.llmVerified -> SetupStep.LLM
+        !progress.areaImported -> SetupStep.AREA
+        else -> SetupStep.DONE
     }
 
     // --- ステップ移動 ---
@@ -187,12 +247,23 @@ class SetupViewModel(
         }
     }
 
+    /**
+     * 疎通テスト。**結果はテスト開始時の入力に紐づく**。
+     *
+     * 待っている間に入力が変わっていたら、その結果は今の設定のものではないので捨てる
+     * （未検証の設定に「疎通済み」が立たないようにする）。入力を触った時点で
+     * [updateLlmInput] が疎通済みフラグを落としているので、捨てれば未検証のまま残る。
+     */
     fun onTestLlmConnection() {
         if (_uiState.value.isTestingLlm) return
+        val tested = _uiState.value.currentLlmSettings()
         _uiState.update { it.copy(isTestingLlm = true, llmError = null) }
         viewModelScope.launch {
-            val result = testLlmConnection(_uiState.value.currentLlmSettings())
+            val result = testLlmConnection(tested)
             _uiState.update { state ->
+                if (state.currentLlmSettings() != tested) {
+                    return@update state.copy(isTestingLlm = false)
+                }
                 when (result) {
                     LlmConnectionTestResult.Success -> state.copy(
                         isTestingLlm = false,

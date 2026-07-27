@@ -394,6 +394,13 @@ private fun AreaStep(uiState: SetupUiState, callbacks: SetupCallbacks) {
                 style = MaterialTheme.typography.bodyMedium,
             )
         }
+        // 前回の取り込み結果が端末に残っている場合（この画面では件数の内訳を持っていない）
+        if (uiState.importResult == null && uiState.progress.areaImported) {
+            Text(
+                text = "取り込み済みの地図データがあります。取り込み直す場合は上のボタンを押してください。",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
         uiState.importError?.let { error ->
             Text(
                 text = error,
