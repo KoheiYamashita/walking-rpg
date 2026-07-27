@@ -29,7 +29,8 @@
 | 位置情報 | expect/actual：FusedLocationProvider / CoreLocation | |
 | 歩数 | expect/actual：Health Connect / CMPedometer | 押し忘れ救済（design.md §3）専用 |
 | 振動 | expect/actual：Vibrator / Core Haptics | 歩行中の唯一のフィードバックチャネル |
-| 天候 | 天候API（帰宅後にタイムスタンプ＋位置で後付け取得） | 分岐成長・条件到達・図鑑変奏の入力。散歩中は不要 |
+| 天候 | `WeatherProvider`抽象＋3実装（Open-Meteo / OpenWeatherMap / Visual Crossing） | 設定画面で選択。Open-Meteoはキー不要。帰宅後にタイムスタンプ＋位置で後付け取得 |
+| LLM | `LlmClient`抽象＋**2フォーマット実装**（Anthropic Messages / OpenAI Chat Completions） | ベースURL・モデル名・キーは自由設定。OpenAI互換エンドポイントに対応 |
 | 設定・キー保管 | expect/actual：Keystore / Keychain | **各種APIキーはユーザーが設定画面から入力**して保存 |
 
 ## 2. レイヤー構成（MVVM + UseCase）
@@ -136,9 +137,13 @@ GPS（1〜3秒間隔）→ 精度フィルタ → map matching（ローカルway
 
 ### LLM運用（サーバーなし）
 
-- Ktor で Anthropic API を直接呼ぶ。モデルはHaiku級（design.md §7）
-- **APIキー（LLM・天候等）は設定画面からユーザーが入力（必須）**し、Keystore / Keychain に保存。
-  アプリ本体にキーを埋め込まない。**初回セットアップでキー入力を要求し、未設定ではプレイを開始できない**
+- LLMクライアントは`LlmClient`インターフェース1枚の背後に**2フォーマット実装**：
+  Anthropic Messages API / OpenAI Chat Completions。ドメイン層はフォーマットの違いを知らない
+- **ベースURL・モデル名・キーは設定で自由**。OpenAI互換エンドポイント（OpenRouter・ローカルLLM等）が
+  そのまま使える。既定はAnthropic + Haiku級（design.md §7）
+- **接続設定（フォーマット・URL・モデル・キー）は設定画面からユーザーが入力（必須）**し、
+  キーはKeystore / Keychainに保存。アプリ本体にキーを埋め込まない。
+  **初回セットアップで疎通確認が通るまでプレイを開始できない**
   （散歩中のLLM呼び出し失敗時に定型文で凌ぐランタイムの縮退は従来どおり。未設定とは別の話）
 - **他人に配布するならこの方式は使えない**（キー抜き取りリスク）。その時は薄いプロキシを立てる。サーバーなし前提の唯一の破れ目としてここに明記しておく
 - 生成タイミングは3段階（design.md §7）。実装上の対応：
