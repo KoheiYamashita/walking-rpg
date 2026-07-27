@@ -2,7 +2,7 @@ package com.walkingrpg.app.ui.home
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.walkingrpg.shared.platform.Platform
+import com.walkingrpg.shared.domain.GetPlatformNameUseCase
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -25,10 +25,11 @@ data class HomeUiState(
  * 役割規約（architecture.md §2）：
  * `StateFlow<UiState>` の組み立てとUseCase呼び出しのみを行い、
  * プラットフォームAPI・DB・HTTPには直接触らない。
- * 雛形では注入された [Platform] を表示するだけで、UseCaseは後続issueで足す。
+ * 依存はUseCase（shared/domain）だけで、その先の
+ * Repository実装・expect/actual はここからは見えない。
  */
 class HomeViewModel(
-    private val platform: Platform,
+    private val getPlatformName: GetPlatformNameUseCase,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(HomeUiState())
@@ -36,7 +37,7 @@ class HomeViewModel(
 
     init {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = false, platformName = platform.name) }
+            _uiState.update { it.copy(isLoading = false, platformName = getPlatformName()) }
         }
     }
 
