@@ -9,11 +9,19 @@ import com.walkingrpg.shared.data.WalkSessionExporterImpl
 import com.walkingrpg.shared.data.WalkSessionRepositoryImpl
 import com.walkingrpg.shared.data.createDatabase
 import com.walkingrpg.shared.data.map.MapCameraRepositoryImpl
+import com.walkingrpg.shared.data.osm.OsmMasterRepositoryImpl
+import com.walkingrpg.shared.data.osm.OverpassConfig
+import com.walkingrpg.shared.data.osm.OverpassOsmAreaSource
+import com.walkingrpg.shared.data.osm.osmHttpClient
 import com.walkingrpg.shared.domain.Clock
 import com.walkingrpg.shared.domain.GetPlatformNameUseCase
 import com.walkingrpg.shared.domain.SystemInfoRepository
 import com.walkingrpg.shared.domain.map.GetMapSceneUseCase
 import com.walkingrpg.shared.domain.map.MapCameraRepository
+import com.walkingrpg.shared.domain.osm.GetOsmMasterCountsUseCase
+import com.walkingrpg.shared.domain.osm.ImportOsmAreaUseCase
+import com.walkingrpg.shared.domain.osm.OsmAreaSource
+import com.walkingrpg.shared.domain.osm.OsmMasterRepository
 import com.walkingrpg.shared.domain.walk.CurrentLocationRepository
 import com.walkingrpg.shared.domain.walk.ExportWalkSessionUseCase
 import com.walkingrpg.shared.domain.walk.LocationPermissionRepository
@@ -41,6 +49,12 @@ import org.koin.dsl.module
 
 /** アプリ全体で生き続けるコルーチンスコープ（記録の収集を回す場所）。 */
 val APP_SCOPE = named("appScope")
+
+/**
+ * OSM取り込み用のHTTPクライアント。
+ * LLM・天候の呼び出し（別issue）とは設定（User-Agent・リトライ方針）が違うので分けておく。
+ */
+private val OSM_HTTP_CLIENT = named("osmHttpClient")
 
 /**
  * shared モジュールのDI定義。
@@ -89,4 +103,13 @@ val sharedModule = module {
     // 現在地は記録用の測位（WalkRecorder）と同じ LocationProvider / 権限判定を使い回す
     single<CurrentLocationRepository> { CurrentLocationRepositoryImpl(get(), get()) }
     factoryOf(::GetMapSceneUseCase)
+
+    // --- OSMマスタの取り込み（issue #5） ---
+    // エンドポイント等はここで差し替えられる（OverpassConfig）
+    single { OverpassConfig() }
+    single(OSM_HTTP_CLIENT) { osmHttpClient(get()) }
+    single<OsmAreaSource> { OverpassOsmAreaSource(get(OSM_HTTP_CLIENT), get()) }
+    single<OsmMasterRepository> { OsmMasterRepositoryImpl(get()) }
+    factoryOf(::ImportOsmAreaUseCase)
+    factoryOf(::GetOsmMasterCountsUseCase)
 }

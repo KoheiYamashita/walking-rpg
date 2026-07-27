@@ -1,0 +1,33 @@
+-- OSM取り込みのマスタ（architecture.md §4「マスタ」）。
+-- 真実の源ではないので、対象圏を取り直せばいつでも作り直せる。
+--
+-- geometry は座標列を `lat,lon;lat,lon;...` のテキストで持つ。
+-- 理由：SQLDelightの型はKMP共通で扱える必要があり、SpatiaLite等の空間拡張は使えない。
+-- JSONより短く、この形式なら人間が中身を読める。値は Double のテキスト表現をそのまま使う
+-- ので往復で値が変わらない。エンコード／デコードは data層の WayGeometryCodec に閉じる。
+
+CREATE TABLE way (
+    id       INTEGER NOT NULL PRIMARY KEY,  -- OSMのway ID（採番しない＝再取り込みで置き換わる）
+    name     TEXT,                          -- 名前のないwayが大半なのでNULL可
+    highway  TEXT NOT NULL,                 -- residential / footway / unclassified / pedestrian / path
+    geometry TEXT NOT NULL,                 -- 座標列（上記フォーマット）
+    length_m REAL NOT NULL                  -- ハーバサインで算出した全長（メートル）
+);
+
+CREATE INDEX way_highway ON way(highway);
+
+-- 再取り込みで件数が増えないよう、OSMのIDをキーに置き換える（冪等）
+upsertWay:
+INSERT OR REPLACE INTO way(id, name, highway, geometry, length_m)
+VALUES (?, ?, ?, ?, ?);
+
+selectAllWays:
+SELECT id, name, highway, geometry, length_m
+FROM way
+ORDER BY id;
+
+countWays:
+SELECT COUNT(*) FROM way;
+
+deleteAllWays:
+DELETE FROM way;

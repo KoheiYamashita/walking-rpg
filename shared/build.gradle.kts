@@ -60,6 +60,7 @@ kotlin {
         commonTest.dependencies {
             implementation(kotlin("test"))
             implementation(libs.kotlinx.coroutines.test)
+            implementation(libs.ktor.client.mock)
         }
         androidUnitTest.dependencies {
             // .sq のクエリはJVM上のインメモリSQLiteで実際に実行して検証する
