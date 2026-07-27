@@ -1,2 +1,43 @@
 # 位置情報を含むローカルメモ（公開しない）
 docs/local/
+
+# --- Gradle / Kotlin ---
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+.kotlin/
+local.properties
+kotlin-js-store/
+
+# --- Android ---
+*.apk
+*.aab
+*.ap_
+*.dex
+captures/
+.cxx/
+release/
+
+# --- IDE ---
+.idea/
+*.iml
+*.ipr
+*.iws
+out/
+.fleet/
+
+# --- Xcode / iOS ---
+xcuserdata/
+*.xcuserstate
+*.xcworkspace/xcuserdata/
+DerivedData/
+*.hmap
+*.ipa
+*.dSYM
+*.dSYM.zip
+Pods/
+Podfile.lock
+
+# --- OS ---
+.DS_Store
+Thumbs.db

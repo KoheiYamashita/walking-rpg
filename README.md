@@ -12,6 +12,7 @@
 - [設計メモ](docs/design.md) — コンセプト、設計原則、システム詳細、LLM運用方針、OSMデータ監査、MVPスコープ、決定事項ログ
 - [技術アーキテクチャ](docs/architecture.md) — KMP + Compose Multiplatform構成、MVVMレイヤー規約、データモデル、主要フロー
 - [実装プラン](docs/plan.md) — マイルストーン（M0基盤→M1土台→M2体験→M3検証）とクリティカルパス。タスクはGitHub issueで管理
+- [開発ガイド](CONTRIBUTING.md) — モジュール構成、MVVMレイヤー規約、ビルド手順
 
 詳細はすべて設計メモ側に置く（このREADMEには二重管理しない）。
 
