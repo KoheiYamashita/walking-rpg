@@ -1,14 +1,40 @@
 package com.walkingrpg.shared.di
 
+import com.walkingrpg.shared.data.LocationPermissionRepositoryImpl
+import com.walkingrpg.shared.data.SystemClock
 import com.walkingrpg.shared.data.SystemInfoRepositoryImpl
+import com.walkingrpg.shared.data.WalkRecorderImpl
+import com.walkingrpg.shared.data.WalkSessionExporterImpl
+import com.walkingrpg.shared.data.WalkSessionRepositoryImpl
+import com.walkingrpg.shared.data.createDatabase
+import com.walkingrpg.shared.domain.Clock
 import com.walkingrpg.shared.domain.GetPlatformNameUseCase
 import com.walkingrpg.shared.domain.SystemInfoRepository
+import com.walkingrpg.shared.domain.walk.ExportWalkSessionUseCase
+import com.walkingrpg.shared.domain.walk.LocationPermissionRepository
+import com.walkingrpg.shared.domain.walk.ObserveLocationPermissionUseCase
+import com.walkingrpg.shared.domain.walk.ObserveWalkRecordingUseCase
+import com.walkingrpg.shared.domain.walk.ObserveWalkSessionsUseCase
+import com.walkingrpg.shared.domain.walk.RefreshLocationPermissionUseCase
+import com.walkingrpg.shared.domain.walk.RequestLocationPermissionUseCase
+import com.walkingrpg.shared.domain.walk.StartWalkSessionUseCase
+import com.walkingrpg.shared.domain.walk.StopWalkSessionUseCase
+import com.walkingrpg.shared.domain.walk.WalkRecorder
+import com.walkingrpg.shared.domain.walk.WalkSessionExporter
+import com.walkingrpg.shared.domain.walk.WalkSessionRepository
 import com.walkingrpg.shared.platform.Platform
 import com.walkingrpg.shared.platform.currentPlatform
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import org.koin.core.module.dsl.factoryOf
 import org.koin.core.module.dsl.singleOf
+import org.koin.core.qualifier.named
 import org.koin.dsl.bind
 import org.koin.dsl.module
+
+/** アプリ全体で生き続けるコルーチンスコープ（記録の収集を回す場所）。 */
+val APP_SCOPE = named("appScope")
 
 /**
  * shared モジュールのDI定義。
@@ -17,7 +43,36 @@ import org.koin.dsl.module
  * [Platform] はこの層に閉じる。
  */
 val sharedModule = module {
+    includes(platformModule)
+
     single<Platform> { currentPlatform() }
     singleOf(::SystemInfoRepositoryImpl) bind SystemInfoRepository::class
     factoryOf(::GetPlatformNameUseCase)
+
+    single<CoroutineScope>(APP_SCOPE) { CoroutineScope(SupervisorJob() + Dispatchers.Default) }
+    single<Clock> { SystemClock() }
+
+    // --- 散歩セッション（issue #2） ---
+    single { createDatabase(get()) }
+    single<WalkSessionRepository> { WalkSessionRepositoryImpl(get()) }
+    single<LocationPermissionRepository> { LocationPermissionRepositoryImpl(get()) }
+    single<WalkSessionExporter> { WalkSessionExporterImpl(get(), get()) }
+    single<WalkRecorder> {
+        WalkRecorderImpl(
+            locationProvider = get(),
+            sessionRepository = get(),
+            sessionKeeper = get(),
+            clock = get(),
+            scope = get(APP_SCOPE),
+        )
+    }
+
+    factoryOf(::StartWalkSessionUseCase)
+    factoryOf(::StopWalkSessionUseCase)
+    factoryOf(::ObserveWalkRecordingUseCase)
+    factoryOf(::ObserveWalkSessionsUseCase)
+    factoryOf(::ObserveLocationPermissionUseCase)
+    factoryOf(::RequestLocationPermissionUseCase)
+    factoryOf(::RefreshLocationPermissionUseCase)
+    factoryOf(::ExportWalkSessionUseCase)
 }

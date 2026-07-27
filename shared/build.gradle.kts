@@ -51,6 +51,12 @@ kotlin {
             implementation(libs.kotlinx.coroutines.android)
             implementation(libs.ktor.client.okhttp)
             implementation(libs.sqldelight.android.driver)
+
+            // platform層（expect/actual）のAndroid実装で使う
+            implementation(libs.koin.android)
+            implementation(libs.androidx.core.ktx)
+            api(libs.androidx.activity)
+            implementation(libs.play.services.location)
         }
         iosMain.dependencies {
             implementation(libs.ktor.client.darwin)
@@ -77,7 +83,7 @@ sqldelight {
     databases {
         create("WalkingRpgDatabase") {
             packageName.set("com.walkingrpg.shared.data.db")
-            // スキーマ定義（.sq）は後続issueで src/commonMain/sqldelight 配下に追加する
+            // スキーマ定義（.sq）は src/commonMain/sqldelight/com/walkingrpg/shared/data/db 配下
         }
     }
 }
