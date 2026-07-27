@@ -17,6 +17,7 @@ import com.walkingrpg.shared.domain.map.MapCameraRepository
 import com.walkingrpg.shared.domain.walk.CurrentLocationRepository
 import com.walkingrpg.shared.domain.walk.ExportWalkSessionUseCase
 import com.walkingrpg.shared.domain.walk.LocationPermissionRepository
+import com.walkingrpg.shared.domain.walk.ObserveIsWalkingUseCase
 import com.walkingrpg.shared.domain.walk.ObserveLocationPermissionUseCase
 import com.walkingrpg.shared.domain.walk.ObserveWalkRecordingUseCase
 import com.walkingrpg.shared.domain.walk.ObserveWalkSessionsUseCase
@@ -76,6 +77,7 @@ val sharedModule = module {
     factoryOf(::StartWalkSessionUseCase)
     factoryOf(::StopWalkSessionUseCase)
     factoryOf(::ObserveWalkRecordingUseCase)
+    factoryOf(::ObserveIsWalkingUseCase)
     factoryOf(::ObserveWalkSessionsUseCase)
     factoryOf(::ObserveLocationPermissionUseCase)
     factoryOf(::RequestLocationPermissionUseCase)

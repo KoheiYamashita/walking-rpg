@@ -30,7 +30,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.walkingrpg.app.ui.KeepScreenOn
 import com.walkingrpg.shared.domain.walk.LocationPermissionStatus
 import com.walkingrpg.shared.domain.walk.WalkRecordingSnapshot
 import com.walkingrpg.shared.domain.walk.WalkSessionSummary
@@ -77,8 +76,7 @@ fun HomeContent(
     onOpenMap: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    KeepScreenOn(uiState.keepScreenOn)
-
+    // 画面ON維持は画面遷移で切れないよう App() で一元管理している（KeepScreenOn）。
     val snackbarHostState = remember { SnackbarHostState() }
     LaunchedEffect(uiState.message) {
         val message = uiState.message ?: return@LaunchedEffect

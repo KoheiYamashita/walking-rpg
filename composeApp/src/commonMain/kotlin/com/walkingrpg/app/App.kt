@@ -9,8 +9,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.backhandler.BackHandler
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.walkingrpg.app.ui.KeepScreenOn
 import com.walkingrpg.app.ui.home.HomeScreen
 import com.walkingrpg.app.ui.map.MapScreen
+import org.koin.compose.viewmodel.koinViewModel
 
 /** 画面。ナビゲーションライブラリは画面が増えた時点で導入する。 */
 private enum class Screen { Home, Map }
@@ -28,13 +31,20 @@ private enum class Screen { Home, Map }
  * [BackHandler] はCMP 1.11で `NavigationEventHandler` への置き換えが予告されている
  * （まだ動作する）。画面が増えてナビゲーションライブラリを入れるとき（issue #20以降）に
  * そちらへ移す。
+ *
+ * 記録中の画面ON維持（[KeepScreenOn]）はここ1箇所だけで行う。画面ごとに置くと
+ * 画面遷移で `onDispose` が走って消灯が復活するうえ、記録状態を二重に持つことになる。
  */
 @Suppress("DEPRECATION")
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
-fun App() {
+fun App(viewModel: AppViewModel = koinViewModel()) {
+    val keepScreenOn by viewModel.keepScreenOn.collectAsStateWithLifecycle()
+
     MaterialTheme {
         Surface {
+            KeepScreenOn(keepScreenOn)
+
             var screen by remember { mutableStateOf(Screen.Home) }
 
             BackHandler(enabled = screen != Screen.Home) { screen = Screen.Home }

@@ -35,9 +35,6 @@ data class HomeUiState(
 ) {
     val isWalking: Boolean get() = recording.isRecording
 
-    /** 記録中は画面を消させない（design.md §3「画面はONのまま携行するのが基本」）。 */
-    val keepScreenOn: Boolean get() = isWalking
-
     val needsPermission: Boolean get() = permission != LocationPermissionStatus.GRANTED
 }
 
