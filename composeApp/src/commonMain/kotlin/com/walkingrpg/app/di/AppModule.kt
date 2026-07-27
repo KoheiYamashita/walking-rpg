@@ -8,7 +8,10 @@ import org.koin.core.module.dsl.viewModelOf
 import org.koin.dsl.KoinAppDeclaration
 import org.koin.dsl.module
 
-/** UI層（ViewModel）のDI定義。 */
+/**
+ * UI層（ViewModel）のDI定義。
+ * ViewModelのコンストラクタ引数（UseCase）は `sharedModule` から解決される。
+ */
 val appModule = module {
     viewModelOf(::HomeViewModel)
 }

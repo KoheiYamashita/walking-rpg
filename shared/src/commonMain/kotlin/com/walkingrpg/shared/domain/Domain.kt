@@ -7,6 +7,7 @@ package com.walkingrpg.shared.domain
  * - UseCase は1操作1クラス。時刻・乱数は使わず `Clock` 等を注入する
  * - Repository は「インターフェースだけ」ここに置き、実装は data 層
  *
- * ドメインモデル・UseCase・Repositoryインターフェースは後続issueで追加する。
+ * 現状は [SystemInfoRepository] と [GetPlatformNameUseCase] がレイヤリングの見本。
+ * ドメインモデルと本編のUseCaseは後続issueで追加する。
  */
 internal object DomainLayer
