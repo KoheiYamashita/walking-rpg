@@ -14,6 +14,7 @@ kotlinxSerialization = "1.11.0"
 koin = "4.2.2"
 ktor = "3.5.1"
 lifecycle = "2.10.0"
+maplibre = "13.4.1"
 sqldelight = "2.3.2"
 
 [libraries]
@@ -47,6 +48,11 @@ sqldelight-runtime = { module = "app.cash.sqldelight:runtime", version.ref = "sq
 sqldelight-coroutines-extensions = { module = "app.cash.sqldelight:coroutines-extensions", version.ref = "sqldelight" }
 sqldelight-android-driver = { module = "app.cash.sqldelight:android-driver", version.ref = "sqldelight" }
 sqldelight-native-driver = { module = "app.cash.sqldelight:native-driver", version.ref = "sqldelight" }
+
+# 地図（Androidのみ。iOSはSPM/CocoaPodsで別途導入する）
+# 既定の android-sdk は Vulkan ビルドで `uses-feature vulkan required=true` が入り
+# 対応端末が絞られるため、OpenGL ES ビルドを選ぶ（APIは同一）。
+maplibre-android = { module = "org.maplibre.gl:android-sdk-opengl", version.ref = "maplibre" }
 
 # Android
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "androidx-activityCompose" }

@@ -1,6 +1,12 @@
 # 位置情報を含むローカルメモ（公開しない）
 docs/local/
 
+# --- 地図データ（対象圏＝位置情報そのもの。絶対にコミットしない） ---
+# 生成手順は scripts/README.md。生成物はローカルにだけ置く
+*.pmtiles
+*.mbtiles
+scripts/local-config
+
 # --- Gradle / Kotlin ---
 .gradle/
 build/

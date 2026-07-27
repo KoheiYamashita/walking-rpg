@@ -8,6 +8,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -24,6 +25,7 @@ import org.koin.compose.viewmodel.koinViewModel
  */
 @Composable
 fun HomeScreen(
+    onOpenMap: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: HomeViewModel = koinViewModel(),
 ) {
@@ -32,6 +34,7 @@ fun HomeScreen(
     HomeContent(
         uiState = uiState,
         onToggleWalk = viewModel::onToggleWalk,
+        onOpenMap = onOpenMap,
         modifier = modifier,
     )
 }
@@ -41,6 +44,7 @@ fun HomeScreen(
 fun HomeContent(
     uiState: HomeUiState,
     onToggleWalk: () -> Unit,
+    onOpenMap: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -57,6 +61,9 @@ fun HomeContent(
         Text(text = uiState.platformName, style = MaterialTheme.typography.bodyMedium)
         Button(onClick = onToggleWalk) {
             Text(if (uiState.isWalking) "散歩を終える" else "散歩に出る")
+        }
+        TextButton(onClick = onOpenMap) {
+            Text("地図を見る")
         }
     }
 }

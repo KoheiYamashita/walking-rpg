@@ -1,8 +1,11 @@
 package com.walkingrpg.shared.di
 
 import com.walkingrpg.shared.data.SystemInfoRepositoryImpl
+import com.walkingrpg.shared.data.map.MapAreaRepositoryImpl
 import com.walkingrpg.shared.domain.GetPlatformNameUseCase
 import com.walkingrpg.shared.domain.SystemInfoRepository
+import com.walkingrpg.shared.domain.map.GetMapSceneUseCase
+import com.walkingrpg.shared.domain.map.MapAreaRepository
 import com.walkingrpg.shared.platform.Platform
 import com.walkingrpg.shared.platform.currentPlatform
 import org.koin.core.module.dsl.factoryOf
@@ -17,7 +20,13 @@ import org.koin.dsl.module
  * [Platform] はこの層に閉じる。
  */
 val sharedModule = module {
+    includes(platformModule)
+
     single<Platform> { currentPlatform() }
+
     singleOf(::SystemInfoRepositoryImpl) bind SystemInfoRepository::class
     factoryOf(::GetPlatformNameUseCase)
+
+    singleOf(::MapAreaRepositoryImpl) bind MapAreaRepository::class
+    factoryOf(::GetMapSceneUseCase)
 }

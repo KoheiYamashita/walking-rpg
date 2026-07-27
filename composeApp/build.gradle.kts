@@ -56,6 +56,10 @@ kotlin {
             implementation(compose.preview)
             implementation(libs.androidx.activity.compose)
             implementation(libs.koin.android)
+
+            // 地図はCMPで共通化できない唯一の部品（architecture.md §1）。
+            // AndroidView越しに埋め込むため、依存はandroidMainだけに置く。
+            implementation(libs.maplibre.android)
         }
     }
 }
@@ -75,6 +79,12 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    androidResources {
+        // PMTilesはレンジ読み出し前提のフォーマット。APK内で圧縮されると
+        // assetsからの取り出しが遅くなるだけなので圧縮対象から外す。
+        noCompress += "pmtiles"
     }
 
     buildTypes {

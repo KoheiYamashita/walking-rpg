@@ -64,6 +64,10 @@ open iosApp/iosApp.xcodeproj            # iOS（macOSのみ）
 
 Android SDKの場所は `local.properties`（Git管理外）か `ANDROID_HOME` で指定する。
 
+地図タイル（PMTiles）と初期表示位置は**対象圏そのもの＝位置情報**なのでリポジトリに入れない。
+各自で生成して配置する（未配置でもビルドは通り、地図画面が案内を出すだけ）。
+手順は [scripts/README.md](scripts/README.md)。
+
 ## テスト方針（architecture.md §7）
 
 - ドメイン層は純Kotlinなので通常のunit testで書ける。map matching・成長・チェーン判定に集中させる
