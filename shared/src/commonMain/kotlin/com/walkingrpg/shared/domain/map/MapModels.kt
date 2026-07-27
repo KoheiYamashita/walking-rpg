@@ -6,17 +6,32 @@ package com.walkingrpg.shared.domain.map
  * 描画APIにも地図SDKにも依存しない。MapLibreの型への変換はUI層（composeApp）で行う。
  */
 
-/** 緯度経度。座標そのものはリポジトリ外（ローカル設定）から来る。 */
+/** 緯度経度。 */
 data class GeoPoint(
     val latitude: Double,
     val longitude: Double,
 )
 
-/** 地図の初期表示位置。 */
+/** 地図の表示位置。 */
 data class MapCamera(
     val center: GeoPoint,
     val zoom: Double,
-)
+) {
+    companion object {
+        /**
+         * 現在地が取れないときの初期表示。国全体が入る広域ズームで、
+         * 「どこも指していない」ことが見て分かる状態にする。
+         *
+         * ユーザー固有の座標（自宅・対象圏）はリポジトリに置かない方針なので、
+         * 設定ファイルから読む仕組みは持たない。地図が寄るのは
+         * 位置情報の権限を許可して現在地が取れたときだけ。
+         */
+        val WIDE_DEFAULT: MapCamera = MapCamera(
+            center = GeoPoint(latitude = 36.2, longitude = 138.3),
+            zoom = 4.5,
+        )
+    }
+}
 
 /**
  * way（道路セグメント）1本ぶんの色づけ。

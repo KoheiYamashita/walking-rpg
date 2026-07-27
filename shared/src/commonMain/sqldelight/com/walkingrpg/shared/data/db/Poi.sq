@@ -1,0 +1,30 @@
+-- 図鑑素材・配置候補のマスタ（architecture.md §4「マスタ」）。
+-- 安全フィルタ（design.md §6 配置禁止）を通ったものだけが入る。
+-- ＝このテーブルにあるPOIは全部「置いてよい場所」として扱ってよい。
+
+CREATE TABLE poi (
+    id   TEXT NOT NULL PRIMARY KEY,  -- `node/1` 形式。node/way/relationでID空間が別なので種別込み
+    kind TEXT NOT NULL,              -- PoiKind の name（PARK / WATER / RAILWAY / FARMLAND ...）
+    tags TEXT NOT NULL,              -- 元のOSMタグ（JSONオブジェクト）。図鑑の記述生成の材料
+    lat  REAL NOT NULL,
+    lon  REAL NOT NULL
+);
+
+CREATE INDEX poi_kind ON poi(kind);
+
+-- 取り込みは deleteAllPois → upsertPoi を1トランザクションで回す（マスタの作り直し）。
+-- 差分更新にすると、あとから配置禁止タグが付いた地物が消えずに残ってしまう。
+upsertPoi:
+INSERT OR REPLACE INTO poi(id, kind, tags, lat, lon)
+VALUES (?, ?, ?, ?, ?);
+
+selectAllPois:
+SELECT id, kind, tags, lat, lon
+FROM poi
+ORDER BY id;
+
+countPois:
+SELECT COUNT(*) FROM poi;
+
+deleteAllPois:
+DELETE FROM poi;

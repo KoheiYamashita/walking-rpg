@@ -11,19 +11,23 @@ import com.walkingrpg.shared.domain.walk.CurrentLocationRepository
  *
  * 後続issue（#6 map matching）で、ここが `passage` からの導出に置き換わる。
  *
- * カメラの中心は「現在地が取れればそこ、取れなければローカル設定由来の初期位置」。
- * 現在地が取れるかどうかは [CurrentLocationRepository] の向こう側（権限・測位）に閉じており、
- * このUseCaseは `null` かどうかしか見ない。
+ * カメラの中心は**現在地が取れればそこ、取れなければ広域デフォルト**
+ * （[MapCamera.WIDE_DEFAULT]）。ユーザー固有の座標をリポジトリに置かない方針なので、
+ * 「対象圏を設定ファイルで指定する」仕組みは持たない。現在地が取れるかどうかは
+ * [CurrentLocationRepository] の向こう側（権限・測位）に閉じており、
+ * このUseCaseは `null` かどうかしか見ない（権限を促す表示はUI層の担当）。
  */
 class GetMapSceneUseCase(
-    private val mapCameraRepository: MapCameraRepository,
     private val currentLocationRepository: CurrentLocationRepository,
 ) {
     suspend operator fun invoke(): MapScene {
-        val fallback = mapCameraRepository.initialCamera()
         val userLocation = currentLocationRepository.currentFix()
             ?.let { GeoPoint(latitude = it.latitude, longitude = it.longitude) }
-        val camera = fallback.copy(center = userLocation ?: fallback.center)
+        val camera = if (userLocation == null) {
+            MapCamera.WIDE_DEFAULT
+        } else {
+            MapCamera(center = userLocation, zoom = FOCUSED_ZOOM)
+        }
 
         return MapScene(
             camera = camera,
@@ -34,7 +38,7 @@ class GetMapSceneUseCase(
 
     /**
      * 中心から東西に伸びる3本のダミーway。座標は中心からの相対オフセットのみで、
-     * 実在の場所をコードに書かないための措置（中心はローカル設定由来）。
+     * 実在の場所をコードに書かないための措置。
      */
     private fun demoHighlights(center: GeoPoint): List<WayHighlight> =
         List(DEMO_WAY_COUNT) { index ->
@@ -53,6 +57,9 @@ class GetMapSceneUseCase(
         }
 
     private companion object {
+        /** 現在地が取れたときのズーム（散歩の縮尺＝街区が見える程度）。 */
+        const val FOCUSED_ZOOM = 15.0
+
         const val DEMO_WAY_COUNT = 3
         const val DEMO_WAY_VERTEX_COUNT = 5
         const val DEMO_WAY_SPACING_DEG = 0.0015

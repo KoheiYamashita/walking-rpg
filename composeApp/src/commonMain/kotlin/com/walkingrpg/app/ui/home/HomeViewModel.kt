@@ -3,6 +3,10 @@ package com.walkingrpg.app.ui.home
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.walkingrpg.shared.domain.GetPlatformNameUseCase
+import com.walkingrpg.shared.domain.osm.GetOsmMasterCountsUseCase
+import com.walkingrpg.shared.domain.osm.ImportOsmAreaUseCase
+import com.walkingrpg.shared.domain.osm.OsmImportResult
+import com.walkingrpg.shared.domain.osm.OsmMasterCounts
 import com.walkingrpg.shared.domain.walk.ExportWalkSessionUseCase
 import com.walkingrpg.shared.domain.walk.LocationPermissionStatus
 import com.walkingrpg.shared.domain.walk.ObserveLocationPermissionUseCase
@@ -31,12 +35,29 @@ data class HomeUiState(
     val recording: WalkRecordingSnapshot = WalkRecordingSnapshot(),
     val permission: LocationPermissionStatus = LocationPermissionStatus.UNKNOWN,
     val sessions: List<WalkSessionSummary> = emptyList(),
+    val osmImport: OsmImportUiState = OsmImportUiState(),
     val message: String? = null,
 ) {
     val isWalking: Boolean get() = recording.isRecording
 
     val needsPermission: Boolean get() = permission != LocationPermissionStatus.GRANTED
 }
+
+/**
+ * OSMマスタ取り込み（issue #5）のデバッグUI状態。
+ *
+ * 本来の導線は初回セットアップ（issue #6）が作る。ここは
+ * 「監査値（design.md §9）と件数が乖離していないか」を実機で確かめるための仮表示。
+ *
+ * @param storedCounts 端末DBに現在入っている件数（再取り込みで増えない＝冪等の目視確認用）。
+ * @param lastResult 直近の取り込み1回の内訳（除外件数を含む）。
+ */
+data class OsmImportUiState(
+    val isImporting: Boolean = false,
+    val storedCounts: OsmMasterCounts? = null,
+    val lastResult: OsmImportResult? = null,
+    val error: String? = null,
+)
 
 /**
  * ホーム画面のViewModel。
@@ -57,6 +78,8 @@ class HomeViewModel(
     private val requestLocationPermission: RequestLocationPermissionUseCase,
     private val refreshLocationPermission: RefreshLocationPermissionUseCase,
     private val exportWalkSession: ExportWalkSessionUseCase,
+    private val importOsmArea: ImportOsmAreaUseCase,
+    private val getOsmMasterCounts: GetOsmMasterCountsUseCase,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(HomeUiState())
@@ -81,6 +104,7 @@ class HomeViewModel(
                 _uiState.update { it.copy(permission = permission) }
             }
         }
+        viewModelScope.launch { refreshOsmCounts() }
     }
 
     /** 画面に戻ってきたときに権限の付与状況を読み直す。 */
@@ -118,7 +142,50 @@ class HomeViewModel(
         }
     }
 
+    /** デバッグ用の取り込みトリガー（issue #5）。本来の導線は初回セットアップ（issue #6）。 */
+    fun onImportOsmArea() {
+        if (_uiState.value.osmImport.isImporting) return
+        _uiState.update { it.copy(osmImport = it.osmImport.copy(isImporting = true, error = null)) }
+        viewModelScope.launch {
+            try {
+                val result = importOsmArea()
+                _uiState.update {
+                    it.copy(osmImport = it.osmImport.copy(isImporting = false, lastResult = result))
+                }
+                refreshOsmCounts()
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (error: Throwable) {
+                _uiState.update {
+                    it.copy(
+                        osmImport = it.osmImport.copy(
+                            isImporting = false,
+                            error = error.message ?: "原因不明",
+                        ),
+                    )
+                }
+            }
+        }
+    }
+
     fun onMessageShown() {
         _uiState.update { it.copy(message = null) }
+    }
+
+    private suspend fun refreshOsmCounts() {
+        try {
+            val counts = getOsmMasterCounts()
+            _uiState.update { it.copy(osmImport = it.osmImport.copy(storedCounts = counts)) }
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (error: Throwable) {
+            _uiState.update {
+                it.copy(
+                    osmImport = it.osmImport.copy(
+                        error = "マスタ件数の読み出しに失敗しました: ${error.message ?: "原因不明"}",
+                    ),
+                )
+            }
+        }
     }
 }

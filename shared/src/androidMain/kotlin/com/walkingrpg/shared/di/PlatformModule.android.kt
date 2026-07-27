@@ -10,8 +10,6 @@ import com.walkingrpg.shared.platform.FileShare
 import com.walkingrpg.shared.platform.LocationPermissionController
 import com.walkingrpg.shared.platform.LocationProvider
 import com.walkingrpg.shared.platform.SessionKeeper
-import com.walkingrpg.shared.platform.map.AndroidMapCameraSource
-import com.walkingrpg.shared.platform.map.MapCameraSource
 import org.koin.android.ext.koin.androidContext
 import org.koin.core.module.Module
 import org.koin.dsl.bind
@@ -31,7 +29,4 @@ actual val platformModule: Module = module {
     single<SessionKeeper> { AndroidSessionKeeper(androidContext()) }
     single<FileShare> { AndroidFileShare(androidContext()) }
     single<DatabaseDriverFactory> { AndroidDatabaseDriverFactory(androidContext()) }
-
-    // --- 地図（issue #4） ---
-    single<MapCameraSource> { AndroidMapCameraSource() }
 }

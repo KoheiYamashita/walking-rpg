@@ -59,6 +59,7 @@ fun HomeScreen(
         onToggleWalk = viewModel::onToggleWalk,
         onRequestPermission = viewModel::onRequestPermission,
         onExportSession = viewModel::onExportSession,
+        onImportOsmArea = viewModel::onImportOsmArea,
         onMessageShown = viewModel::onMessageShown,
         onOpenMap = onOpenMap,
         modifier = modifier,
@@ -72,6 +73,7 @@ fun HomeContent(
     onToggleWalk: () -> Unit,
     onRequestPermission: () -> Unit,
     onExportSession: (Long) -> Unit,
+    onImportOsmArea: () -> Unit,
     onMessageShown: () -> Unit,
     onOpenMap: () -> Unit,
     modifier: Modifier = Modifier,
@@ -140,6 +142,13 @@ fun HomeContent(
                 TextButton(onClick = onOpenMap, modifier = Modifier.fillMaxWidth()) {
                     Text("地図を見る")
                 }
+            }
+
+            item {
+                HorizontalDivider()
+            }
+            item {
+                OsmImportCard(state = uiState.osmImport, onImport = onImportOsmArea)
             }
 
             item {
@@ -239,6 +248,63 @@ private fun RecordingCard(recording: WalkRecordingSnapshot) {
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error,
                 )
+            }
+        }
+    }
+}
+
+/**
+ * OSMマスタ取り込みのデバッグUI（issue #5）。
+ *
+ * 本来の導線は初回セットアップ（issue #6）が作る。ここは実機で
+ * 「取れた件数が監査値（design.md §9）と大きく乖離しないか」を確かめるための仮表示。
+ */
+@Composable
+private fun OsmImportCard(state: OsmImportUiState, onImport: () -> Unit) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(text = "OSMマスタ（デバッグ）", style = MaterialTheme.typography.titleMedium)
+            Text(
+                text = "対象圏の中心は現在地、半径は500m。位置情報の権限が要ります。",
+                style = MaterialTheme.typography.bodySmall,
+            )
+
+            val stored = state.storedCounts
+            MetricRow("DBのway", stored?.let { "${it.wayCount}件" } ?: "-")
+            MetricRow("DBのPOI", stored?.let { "${it.poiCount}件" } ?: "-")
+
+            state.lastResult?.let { result ->
+                HorizontalDivider()
+                MetricRow("取り込んだway", "${result.wayCount}件")
+                MetricRow("取り込んだPOI", "${result.poiCount}件")
+                MetricRow(
+                    label = "除外（way / POI）",
+                    value = "${result.excludedWayCount} / ${result.excludedPoiCount}件",
+                )
+                Text(
+                    text = "POIの除外内訳：配置禁止 ${result.excludedUnsafePoiCount}件、" +
+                        "分類対象外 ${result.excludedUnclassifiedPoiCount}件",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+
+            state.error?.let { error ->
+                Text(
+                    text = error,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+
+            Button(
+                onClick = onImport,
+                enabled = !state.isImporting,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(if (state.isImporting) "取り込み中…" else "対象圏データを取り込む")
             }
         }
     }
