@@ -1,0 +1,21 @@
+package com.walkingrpg.app.di
+
+import com.walkingrpg.app.ui.home.HomeViewModel
+import com.walkingrpg.shared.di.sharedModule
+import org.koin.core.KoinApplication
+import org.koin.core.context.startKoin
+import org.koin.core.module.dsl.viewModelOf
+import org.koin.dsl.KoinAppDeclaration
+import org.koin.dsl.module
+
+/** UI層（ViewModel）のDI定義。 */
+val appModule = module {
+    viewModelOf(::HomeViewModel)
+}
+
+/** Android / iOS 双方のエントリポイントから呼ぶKoin初期化。 */
+fun initKoin(appDeclaration: KoinAppDeclaration = {}): KoinApplication =
+    startKoin {
+        appDeclaration()
+        modules(sharedModule, appModule)
+    }

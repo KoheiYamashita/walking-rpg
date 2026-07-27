@@ -12,10 +12,11 @@
 - [設計メモ](docs/design.md) — コンセプト、設計原則、システム詳細、LLM運用方針、OSMデータ監査、MVPスコープ、決定事項ログ
 - [技術アーキテクチャ](docs/architecture.md) — KMP + Compose Multiplatform構成、MVVMレイヤー規約、データモデル、主要フロー
 - [実装プラン](docs/plan.md) — マイルストーン（M0基盤→M1土台→M2体験→M3検証）とクリティカルパス。タスクはGitHub issueで管理
+- [開発ガイド](CONTRIBUTING.md) — モジュール構成、MVVMレイヤー規約、ビルド手順
 
 詳細はすべて設計メモ側に置く（このREADMEには二重管理しない）。
 
 ## ステータス
 
-企画・設計フェーズ。実装は未着手。
+実装フェーズ（M0基盤）。進行状況はGitHub issue（#1〜#20）を参照。
 MVPは都内の駅周辺500m圏で検証予定（OSMデータ監査済み・成立確認済み）。
