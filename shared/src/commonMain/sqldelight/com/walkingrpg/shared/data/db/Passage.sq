@@ -1,0 +1,39 @@
+-- map matching の結果（architecture.md §4）。
+-- 導出だが再計算コストが高いので永続化する＝真実の源に準ずる扱い。
+-- ソースは location_sample なので、閾値やアルゴリズムを変えたら
+-- セッション単位で作り直してよい（作り直せることがこの設計の背骨）。
+--
+-- way_id には外部キーを張らない：way マスタは対象圏を取り直すと作り直される
+-- （Way.sq）ので、マスタの入れ替えで真実の源に準ずる行が消える方が困る。
+-- マスタに無い way_id が残った場合は、再計算すれば消える。
+
+CREATE TABLE passage (
+    session_id INTEGER NOT NULL REFERENCES walk_session(id),
+    way_id     INTEGER NOT NULL,  -- OSMのway ID
+    ts         INTEGER NOT NULL   -- epoch millis（その通過の代表時刻＝最初にスナップした測位の時刻）
+);
+
+CREATE INDEX passage_session_ts ON passage(session_id, ts);
+CREATE INDEX passage_way ON passage(way_id);
+
+-- 再計算は deletePassagesBySession → insertPassage を1トランザクションで回す
+-- （セッション単位の作り直し）。差分更新にすると、閾値を厳しくしたときに
+-- 前回の結果として入った通過が消えず、誤塗りが永久に残る。
+deletePassagesBySession:
+DELETE FROM passage
+WHERE session_id = ?;
+
+insertPassage:
+INSERT INTO passage(session_id, way_id, ts)
+VALUES (?, ?, ?);
+
+selectPassagesBySession:
+SELECT session_id, way_id, ts
+FROM passage
+WHERE session_id = ?
+ORDER BY ts, way_id;
+
+countPassagesBySession:
+SELECT COUNT(*)
+FROM passage
+WHERE session_id = ?;
