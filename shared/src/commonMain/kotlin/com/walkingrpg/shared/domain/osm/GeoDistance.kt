@@ -45,6 +45,52 @@ object GeoDistance {
         return total
     }
 
+    /**
+     * 点と線分の最短距離（メートル）。map matching のスナップ距離に使う。
+     *
+     * 線分の端より外に落ちる場合は近い方の端点までの距離になる（線分であって直線ではない）。
+     *
+     * 計算は [point] を原点に取った局所平面（正距円筒図法）で行う：
+     * 球面上で「線分への垂線の足」を厳密に解くのは大円の交差計算になって重いが、
+     * 扱う距離はスナップ上限（数十m）とwayの1セグメント（長くても数百m）なので、
+     * 緯度差による経度スケールの変化は無視できる。この規模では誤差はmm〜cm。
+     */
+    fun distanceToSegmentMeters(point: GeoPoint, start: GeoPoint, end: GeoPoint): Double {
+        // 原点（point）から見た端点の平面座標。x = 東方向、y = 北方向（メートル）。
+        val scaleX = cos(point.latitude.toRadians()) * EARTH_RADIUS_METERS * PI / 180.0
+        val scaleY = EARTH_RADIUS_METERS * PI / 180.0
+        val startX = (start.longitude - point.longitude) * scaleX
+        val startY = (start.latitude - point.latitude) * scaleY
+        val endX = (end.longitude - point.longitude) * scaleX
+        val endY = (end.latitude - point.latitude) * scaleY
+
+        val deltaX = endX - startX
+        val deltaY = endY - startY
+        val lengthSquared = deltaX * deltaX + deltaY * deltaY
+        // 長さ0のセグメント（同一頂点が連続するway）は点として扱う
+        if (lengthSquared == 0.0) return distanceMeters(point, start)
+
+        // 原点を線分へ射影した位置（0..1にクランプ＝線分の外へは出さない）
+        val t = ((-startX * deltaX - startY * deltaY) / lengthSquared).coerceIn(0.0, 1.0)
+        val footX = startX + t * deltaX
+        val footY = startY + t * deltaY
+        return sqrt(footX * footX + footY * footY)
+    }
+
+    /**
+     * 点と折れ線の最短距離（メートル）。点が1つ以下の折れ線は
+     * [Double.POSITIVE_INFINITY]（＝スナップ先にならない）。
+     */
+    fun distanceToPathMeters(point: GeoPoint, path: List<GeoPoint>): Double {
+        if (path.size < 2) return Double.POSITIVE_INFINITY
+        var best = Double.POSITIVE_INFINITY
+        for (index in 1 until path.size) {
+            val distance = distanceToSegmentMeters(point, path[index - 1], path[index])
+            if (distance < best) best = distance
+        }
+        return best
+    }
+
     private fun haversine(radians: Double): Double = sin(radians / 2.0).let { it * it }
 
     private fun Double.toRadians(): Double = this * PI / 180.0
