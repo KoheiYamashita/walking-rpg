@@ -10,6 +10,7 @@ import com.walkingrpg.shared.data.SetupRepositoryImpl
 import com.walkingrpg.shared.data.WalkSessionRepositoryImpl
 import com.walkingrpg.shared.data.createDatabase
 import com.walkingrpg.shared.data.llm.HttpLlmConnectionTester
+import com.walkingrpg.shared.data.matching.PassageRepositoryImpl
 import com.walkingrpg.shared.data.llm.llmHttpClient
 import com.walkingrpg.shared.data.osm.OsmMasterRepositoryImpl
 import com.walkingrpg.shared.data.osm.OverpassConfig
@@ -19,6 +20,9 @@ import com.walkingrpg.shared.domain.Clock
 import com.walkingrpg.shared.domain.GetPlatformNameUseCase
 import com.walkingrpg.shared.domain.SystemInfoRepository
 import com.walkingrpg.shared.domain.map.GetMapSceneUseCase
+import com.walkingrpg.shared.domain.matching.MapMatchingConfig
+import com.walkingrpg.shared.domain.matching.PassageRepository
+import com.walkingrpg.shared.domain.matching.RecomputePassagesUseCase
 import com.walkingrpg.shared.domain.osm.GetOsmMasterCountsUseCase
 import com.walkingrpg.shared.domain.osm.ImportOsmAreaUseCase
 import com.walkingrpg.shared.domain.osm.OsmAreaSource
@@ -127,6 +131,12 @@ val sharedModule = module {
     single<OsmMasterRepository> { OsmMasterRepositoryImpl(get()) }
     factoryOf(::ImportOsmAreaUseCase)
     factoryOf(::GetOsmMasterCountsUseCase)
+
+    // --- map matching（issue #8） ---
+    // 閾値（MapMatchingConfig）はここで差し替えられる。UIからは触らせない。
+    single { MapMatchingConfig.DEFAULT }
+    single<PassageRepository> { PassageRepositoryImpl(get()) }
+    factoryOf(::RecomputePassagesUseCase)
 
     // --- 初回セットアップ（issue #6） ---
     // 秘密（APIキー・自宅座標）と非秘密（URL・モデル名・完了フラグ）の振り分けは
