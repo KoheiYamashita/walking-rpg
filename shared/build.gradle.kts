@@ -88,7 +88,19 @@ sqldelight {
     databases {
         create("WalkingRpgDatabase") {
             packageName.set("com.walkingrpg.shared.data.db")
-            // スキーマ定義（.sq）は src/commonMain/sqldelight/com/walkingrpg/shared/data/db 配下
+            // スキーマ定義（.sq）とマイグレーション（.sqm）は
+            // src/commonMain/sqldelight/com/walkingrpg/shared/data/db 配下
+
+            // 各バージョンのスキーマを .db として書き出す先（CONTRIBUTING.md「DBマイグレーション」）。
+            // sqldelight のソースフォルダ内に置く必要がある：検証タスクは
+            // ソースフォルダを走査して .db を集めるので、外に出すと検証対象が0件になる。
+            schemaOutputDirectory.set(file("src/commonMain/sqldelight/databases"))
+
+            // .sq（＝新規インストールが作るスキーマ）と
+            // .db + .sqm（＝既存DBが辿り着くスキーマ）の食い違いをビルドで落とす。
+            // テーブルを足したのに .sqm を書き忘れる事故を、端末で
+            // 「no such table」が出るより前に検出するための設定。
+            verifyMigrations.set(true)
         }
     }
 }

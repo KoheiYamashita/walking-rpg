@@ -1,0 +1,55 @@
+-- v1 → v2：スパイク期のDB（walk_session / location_sample だけ）に、
+-- 本実装で足したテーブルを追加する。
+--
+-- なぜここが起点なのか：
+-- スキーマのバージョンは今まで 1 のまま動かしていなかったので、既存端末の
+-- user_version はどのビルドから入れても 1 になっている。つまり「1 の中身」は
+-- 端末によってばらばら（walk_session + location_sample しか無い端末もあれば、
+-- way / poi まで入っている端末もある）。それを1本のマイグレーションで
+-- 現行スキーマに揃えるため、起点は最も古い（＝確実に共通の）
+-- walk_session + location_sample に取り、それ以降に足した4テーブルを
+-- ここでまとめて作る。過去のPR単位に .sqm を割るのは、
+-- どのみち user_version で区別できない以上、意味がない。
+--
+-- IF NOT EXISTS を付ける理由：上記のとおり user_version = 1 の端末には
+-- 既に way / poi / passage / way_growth が入っていることがある。
+-- 付けないとその端末で「table already exists」で更新が止まる。
+-- 以降の .sqm はバージョンで状態が確定するので、IF NOT EXISTS は不要
+-- （これはスパイク期の後始末に限った書き方）。
+--
+-- 中身は .sq の CREATE 文と1文字単位で揃えること。ズレると
+-- verifyMigrations（shared/build.gradle.kts）がビルドで落とす。
+
+CREATE TABLE IF NOT EXISTS way (
+    id       INTEGER NOT NULL PRIMARY KEY,
+    name     TEXT,
+    highway  TEXT NOT NULL,
+    geometry TEXT NOT NULL,
+    length_m REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS poi (
+    id   TEXT NOT NULL PRIMARY KEY,
+    kind TEXT NOT NULL,
+    tags TEXT NOT NULL,
+    lat  REAL NOT NULL,
+    lon  REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS passage (
+    session_id INTEGER NOT NULL REFERENCES walk_session(id),
+    way_id     INTEGER NOT NULL,
+    ts         INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS way_growth (
+    way_id     INTEGER NOT NULL PRIMARY KEY,
+    pass_count INTEGER NOT NULL,
+    stage      TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS way_highway ON way(highway);
+CREATE INDEX IF NOT EXISTS poi_kind ON poi(kind);
+CREATE INDEX IF NOT EXISTS passage_session_ts ON passage(session_id, ts);
+CREATE INDEX IF NOT EXISTS passage_way ON passage(way_id);
+CREATE INDEX IF NOT EXISTS way_growth_stage ON way_growth(stage);

@@ -51,6 +51,48 @@ UI層（composeApp）→ ドメイン層（shared/domain）← データ層（sh
 - 導出テーブル（成長・図鑑進捗など）はすべて `passage` から再計算できること
 - 同じ `passage` 列からは必ず同じ導出状態が出る（冪等性テストで常に確認する）
 
+## DBマイグレーション（SQLDelight）
+
+**アンインストールを前提にしない。** `.sq` を書き換えただけでは、既に
+`walking_rpg.db` を持っている端末に新しいテーブルは作られない
+（ドライバは `user_version` の差分ぶんの `.sqm` しか流さない）。
+
+配置は `shared/src/commonMain/sqldelight/` 配下：
+
+```
+com/walkingrpg/shared/data/db/*.sq    # 現行スキーマ＋クエリ（新規インストールはこれで作られる）
+com/walkingrpg/shared/data/db/N.sqm   # v N → v N+1 の差分（既存DBはこれを順に流して追いつく）
+databases/N.db                        # 各バージョンのスキーマ実体（コミットする）
+```
+
+- **バージョンの起点は v1 ＝ スパイク期のスキーマ**（`walk_session` / `location_sample`）。
+  それ以前の変遷は再現しない（スパイク期は再インストール運用だった）。
+  スキーマバージョンは `.sqm` の本数から自動で決まる（`N.sqm` があれば version = N+1）
+- **`databases/*.db` はコミットする。** これが無いと `verifyMigrations` が検証できない
+  （バイナリだがスキーマだけで数十KB、歩行データは入らない）
+- `verifyMigrations = true`（`shared/build.gradle.kts`）なので、`.sq` と `.db + .sqm` が
+  食い違うと `check` で落ちる。**テーブルを足して `.sqm` を書き忘れると端末ではなくビルドで気付く**
+
+### テーブル・列を足すとき
+
+1. `.sq` を編集する（新規インストール向けの正しい形）
+2. 現在の version と同じ番号の `.sqm` を追加する（version 2 なら `2.sqm`）。
+   `.sq` の `CREATE` 文と同じ内容を書く
+3. 新しいバージョンの `.db` を生成してコミットする
+   ```bash
+   ./gradlew :shared:generateCommonMainWalkingRpgDatabaseSchema
+   ```
+4. 検証する
+   ```bash
+   ./gradlew :shared:verifySqlDelightMigration   # .sq と .db + .sqm の一致
+   ./gradlew :shared:testDebugUnitTest           # DatabaseMigrationTest が実DBで往復を確認
+   ```
+
+導出テーブル（`way_growth` など）は捨てて再計算できるので、列を足すときも
+`.sqm` では素直に `ALTER TABLE` / 作り直しでよい。値の移し替えは要らない
+（再計算すれば埋まる）。真実の源（`walk_session` / `location_sample` / `passage`）は
+マイグレーションで壊さないこと。
+
 ## ビルド
 
 必要環境：JDK 17、Android SDK（compileSdk 36）。iOSビルドはmacOS + Xcodeが必要。
