@@ -16,7 +16,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.koin.compose.viewmodel.koinViewModel
 
 /**
- * 地図画面（issue #4 スパイク）。
+ * 地図画面（issue #4 → #10 で成長の抽象レイヤーに）。
  *
  * 役割規約（architecture.md §2）：Composableは描画とイベント送出のみ。
  */
@@ -51,6 +51,7 @@ fun MapContent(
                 camera = uiState.camera,
                 highlights = uiState.highlights,
                 userLocation = uiState.userLocation,
+                followUserLocation = uiState.isFollowingUser,
                 modifier = Modifier.fillMaxSize(),
             )
         }

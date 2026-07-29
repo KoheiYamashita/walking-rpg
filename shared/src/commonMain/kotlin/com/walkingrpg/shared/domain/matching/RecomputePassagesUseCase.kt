@@ -11,7 +11,8 @@ import com.walkingrpg.shared.domain.walk.WalkSessionRepository
  * 純関数で、保存が全削除→挿入なので）。
  *
  * 散歩終了時は、この直後に成長の再計算が続く（`RecomputeAfterWalkUseCase`／#9）。
- * UI（画面からの呼び出し・帰宅後サマリ）への結線は #10 で行う。
+ * 単体で呼ぶのは閾値を変えて流し直すときだけで、散歩終了時の入口は
+ * `RecomputeAfterWalkUseCase` の側（issue #10 で `AppViewModel` に結線済み）。
  */
 class RecomputePassagesUseCase(
     private val sessionRepository: WalkSessionRepository,

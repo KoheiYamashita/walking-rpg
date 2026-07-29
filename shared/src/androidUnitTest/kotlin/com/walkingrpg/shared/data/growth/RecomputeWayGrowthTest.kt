@@ -42,6 +42,7 @@ class RecomputeWayGrowthTest {
         val master = OsmMasterRepositoryImpl(database)
         val passages = PassageRepositoryImpl(database)
         val growths = WayGrowthRepositoryImpl(database)
+        val recentGrowth = InMemoryRecentGrowthRepository()
 
         val recomputeGrowth = RecomputeWayGrowthUseCase(
             passageRepository = passages,
@@ -57,6 +58,8 @@ class RecomputeWayGrowthTest {
                 config = config,
             ),
             recomputeWayGrowth = recomputeGrowth,
+            wayGrowthRepository = growths,
+            recentGrowthRepository = recentGrowth,
         )
     }
 
@@ -154,6 +157,26 @@ class RecomputeWayGrowthTest {
 
         assertTrue(fixture.growths.growths().isEmpty())
         assertNull(fixture.growths.growth(mainStreet.id))
+    }
+
+    @Test
+    fun 散歩のたびに段階が上がった道が地図の強調に渡る() = runTest {
+        val fixture = fixture(listOf(mainStreet, crossStreet))
+        val afterWalk = fixture.afterWalk()
+
+        // 1回目：本通りに草が生える
+        val first = afterWalk(walkMainStreet(fixture))
+        assertEquals(setOf(mainStreet.id), first.stageRaisedWayIds)
+        assertEquals(setOf(mainStreet.id), fixture.recentGrowth.stageRaisedWayIds.value)
+
+        // 2回目：曲がった先が初踏破。本通りは通過2回目で段階は据え置き
+        val second = afterWalk(walkAndTurnNorth(fixture))
+        assertEquals(setOf(crossStreet.id), second.stageRaisedWayIds)
+        assertEquals(
+            setOf(crossStreet.id),
+            fixture.recentGrowth.stageRaisedWayIds.value,
+            "前回の散歩の強調は次の再計算で消える",
+        )
     }
 
     @Test

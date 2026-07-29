@@ -2,10 +2,12 @@ package com.walkingrpg.app.ui.map
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.walkingrpg.shared.domain.growth.ObserveGrowthUpdatesUseCase
 import com.walkingrpg.shared.domain.map.GeoPoint
 import com.walkingrpg.shared.domain.map.GetMapSceneUseCase
 import com.walkingrpg.shared.domain.map.MapCamera
 import com.walkingrpg.shared.domain.map.WayHighlight
+import com.walkingrpg.shared.domain.walk.ObserveIsWalkingUseCase
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -19,6 +21,8 @@ data class MapUiState(
     val highlights: List<WayHighlight> = emptyList(),
     /** 現在地。取れなかった（権限なし等）ときは `null` で、マーカーを出さない。 */
     val userLocation: GeoPoint? = null,
+    /** 記録中は現在地にカメラを追従させる（design.md §3「歩行中」）。 */
+    val isFollowingUser: Boolean = false,
 )
 
 /**
@@ -29,22 +33,37 @@ data class MapUiState(
  */
 class MapViewModel(
     private val getMapScene: GetMapSceneUseCase,
+    observeIsWalking: ObserveIsWalkingUseCase,
+    observeGrowthUpdates: ObserveGrowthUpdatesUseCase,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(MapUiState())
     val uiState: StateFlow<MapUiState> = _uiState.asStateFlow()
 
     init {
+        // 初回読み込みと再読み込みを1本の購読にまとめている。
+        // ObserveGrowthUpdatesUseCase の元は StateFlow なので購読開始で現在値が1回流れ、
+        // そのあとは散歩終了後の再計算のたびに流れる＝地図を開いたままでも
+        // 「今日歩いた道の色が変わっている」が出る（issue #10 の完了条件）。
         viewModelScope.launch {
-            val scene = getMapScene()
-            _uiState.update {
-                it.copy(
-                    isLoading = false,
-                    camera = scene.camera,
-                    highlights = scene.highlights,
-                    userLocation = scene.userLocation,
-                )
+            observeGrowthUpdates().collect { loadScene() }
+        }
+        viewModelScope.launch {
+            observeIsWalking().collect { isWalking ->
+                _uiState.update { it.copy(isFollowingUser = isWalking) }
             }
+        }
+    }
+
+    private suspend fun loadScene() {
+        val scene = getMapScene()
+        _uiState.update {
+            it.copy(
+                isLoading = false,
+                camera = scene.camera,
+                highlights = scene.highlights,
+                userLocation = scene.userLocation,
+            )
         }
     }
 }
