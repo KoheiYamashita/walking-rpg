@@ -8,12 +8,16 @@ import com.walkingrpg.shared.data.growth.WayGrowthRepositoryImpl
 import com.walkingrpg.shared.data.matching.PassageRepositoryImpl
 import com.walkingrpg.shared.data.osm.OsmMasterRepositoryImpl
 import com.walkingrpg.shared.data.steps.StepImportRepositoryImpl
+import com.walkingrpg.shared.data.weather.SessionWeatherRepositoryImpl
 import com.walkingrpg.shared.domain.growth.GrowthStage
 import com.walkingrpg.shared.domain.growth.WayGrowth
 import com.walkingrpg.shared.domain.matching.Passage
 import com.walkingrpg.shared.domain.matching.SyntheticWalk
 import com.walkingrpg.shared.domain.steps.CalendarDay
 import com.walkingrpg.shared.domain.steps.StepImport
+import com.walkingrpg.shared.domain.walk.SessionEndReason
+import com.walkingrpg.shared.domain.weather.SessionWeather
+import com.walkingrpg.shared.domain.weather.WeatherCondition
 import kotlinx.coroutines.test.runTest
 import java.io.File
 import kotlin.test.Test
@@ -97,9 +101,19 @@ class DatabaseMigrationTest {
 
         assertEquals(WalkingRpgDatabase.Schema.version, driver.userVersion())
         assertEquals(
-            listOf("location_sample", "passage", "poi", "step_import", "walk_session", "way", "way_growth"),
+            listOf(
+                "location_sample",
+                "passage",
+                "poi",
+                "session_weather",
+                "step_import",
+                "walk_session",
+                "way",
+                "way_growth",
+            ),
             driver.tableNames(),
-            "way / poi / passage / way_growth（1.sqm）と step_import（2.sqm）が足される",
+            "way / poi / passage / way_growth（1.sqm）・step_import（2.sqm）・" +
+                "session_weather（3.sqm）が足される",
         )
     }
 
@@ -157,6 +171,23 @@ class DatabaseMigrationTest {
         val stepImports = StepImportRepositoryImpl(database)
         stepImports.upsert(StepImport(day = day, steps = 8_200, distanceEstimateMeters = 6_100.0))
         assertEquals(8_200, stepImports.stepImport(day)?.steps)
+
+        // 天候の後付け確定（3.sqm で足した session_weather）。
+        // 更新しただけの端末でも、過去の散歩が「未取得」として拾えて書き込める
+        val weathers = SessionWeatherRepositoryImpl(database)
+        assertEquals(emptyList(), weathers.sessionIdsWithoutWeather(), "まだ終わっていない散歩")
+        sessions.endSession(sessionId, SyntheticWalk.START_MS + 60_000L, SessionEndReason.MANUAL)
+        assertEquals(listOf(sessionId), weathers.sessionIdsWithoutWeather())
+        weathers.save(
+            SessionWeather(
+                sessionId = sessionId,
+                condition = WeatherCondition.RAIN,
+                temperatureCelsius = 13.0,
+                fetchedAtMs = SyntheticWalk.START_MS + 120_000L,
+            ),
+        )
+        assertEquals(WeatherCondition.RAIN, weathers.weather(sessionId)?.condition)
+        assertEquals(emptyList(), weathers.sessionIdsWithoutWeather())
     }
 
     @Test
@@ -175,7 +206,16 @@ class DatabaseMigrationTest {
         driver.upgradeToCurrentSchema()
 
         assertEquals(
-            listOf("location_sample", "passage", "poi", "step_import", "walk_session", "way", "way_growth"),
+            listOf(
+                "location_sample",
+                "passage",
+                "poi",
+                "session_weather",
+                "step_import",
+                "walk_session",
+                "way",
+                "way_growth",
+            ),
             driver.tableNames(),
         )
     }

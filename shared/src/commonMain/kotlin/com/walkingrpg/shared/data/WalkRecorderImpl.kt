@@ -1,6 +1,7 @@
 package com.walkingrpg.shared.data
 
 import com.walkingrpg.shared.domain.Clock
+import com.walkingrpg.shared.domain.feedback.WalkFeedback
 import com.walkingrpg.shared.domain.map.GeoPoint
 import com.walkingrpg.shared.domain.setup.SetupRepository
 import com.walkingrpg.shared.domain.walk.HomeArrivalConfig
@@ -40,6 +41,9 @@ import kotlinx.coroutines.sync.withLock
  * 終了は自動が主で、手動停止は誤検知時の逃げ道（design.md §3）。
  * 自宅到着の判定そのものは [HomeArrivalDetector]（純関数）に置き、
  * ここは「サンプルを流し込んで、成立したら畳む」だけを持つ。
+ *
+ * 歩行中フィードバック（振動1回・issue #12）も同じ形で外に出してある：
+ * サンプルを [WalkFeedback] に流すだけで、何を検知して何を鳴らすかは知らない。
  */
 internal class WalkRecorderImpl(
     private val locationProvider: LocationProvider,
@@ -47,6 +51,7 @@ internal class WalkRecorderImpl(
     private val sessionKeeper: SessionKeeper,
     private val setupRepository: SetupRepository,
     private val walkNotifier: WalkNotifier,
+    private val walkFeedback: WalkFeedback,
     private val clock: Clock,
     private val scope: CoroutineScope,
     private val updateIntervalMs: Long = LocationProvider.DEFAULT_INTERVAL_MS,
@@ -97,12 +102,20 @@ internal class WalkRecorderImpl(
             config = homeArrivalConfig,
         )
 
+        // 歩行中フィードバックの土台（wayマスタ・通過回数・振動の残数）もここで1回だけ作る。
+        // 失敗しても投げない契約（WalkFeedback）なので、記録の開始は止まらない。
+        walkFeedback.walkStarted(sessionId)
+
         collectJob = scope.launch {
             val message = try {
                 locationProvider.updates(updateIntervalMs).collect { fix ->
                     val sample = fix.toSample(sessionId)
                     sessionRepository.appendSample(sample)
                     _state.update { it.sampleRecorded(sample) }
+
+                    // 保存が済んでから流す：フィードバックは記録の副産物であって、
+                    // これが遅れても・落ちても location_sample は残っていなければならない。
+                    walkFeedback.sampleRecorded(sample)
 
                     arrival = arrival.sampleRecorded(sample)
                     // collect の中から自分自身の Job はキャンセルできないので、

@@ -1,0 +1,19 @@
+-- v3 → v4：天候の後付け確定の session_weather を足す（issue #11）。
+--
+-- v3 の端末は 1.sqm・2.sqm を流し終えた状態なので、ここでも中身はバージョンで確定する。
+-- 1.sqm のような IF NOT EXISTS は書かない（あれはスパイク期の後始末。
+-- 付けると「作られなかった」事故が黙って通る）。
+--
+-- 既存の散歩には天候の行が無い＝未取得として扱われるので、
+-- 更新後の初回起動で FetchMissingSessionWeatherUseCase が拾いにいく
+-- （取得可能期間を過ぎたものは「天候不明」で確定する）。ここで値を埋める必要はない。
+--
+-- 中身は SessionWeather.sq の CREATE 文と1文字単位で揃えること。ズレると
+-- verifyMigrations（shared/build.gradle.kts）がビルドで落とす。
+
+CREATE TABLE session_weather (
+    session_id  INTEGER NOT NULL PRIMARY KEY REFERENCES walk_session(id),
+    condition   TEXT NOT NULL,  -- WeatherCondition の name
+    temperature REAL,           -- 気温（℃）。プロバイダが返さなければ NULL
+    fetched_at  INTEGER NOT NULL -- epoch millis（この行を書いた時刻。セッションの時刻ではない）
+);

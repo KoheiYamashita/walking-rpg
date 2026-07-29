@@ -54,6 +54,13 @@ kotlin {
             implementation(kotlin("test"))
             implementation(libs.kotlinx.coroutines.test)
         }
+        androidUnitTest.dependencies {
+            // KoinのDIグラフ検証（verify）。JVM限定APIなので commonTest には置けない
+            implementation(libs.koin.test)
+            // 検証の除外型に HttpClientEngine を挙げるため（AppModuleVerifyTest のコメント参照）。
+            // shared 側では implementation なので、型を名指しするにはテストにだけ足す必要がある
+            implementation(libs.ktor.client.core)
+        }
         androidMain.dependencies {
             implementation(compose.preview)
             implementation(libs.androidx.activity.compose)

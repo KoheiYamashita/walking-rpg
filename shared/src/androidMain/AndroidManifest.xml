@@ -10,6 +10,10 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- 歩行中フィードバック（design.md §3「振動1回＝『何かが起きた』の印」）。
+         normal権限なので実行時の許可ダイアログは出ない -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
     <!-- 歩数計（design.md §3「開始を押し忘れた日」）。許可されていなければ黙って
          取り込まない（HealthConnectDailyStepsSource）ので、無くても他の機能は動く。
          許可を求める導線は #16 / #20 で作る -->

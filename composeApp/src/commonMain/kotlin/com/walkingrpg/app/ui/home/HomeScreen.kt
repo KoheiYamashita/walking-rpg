@@ -30,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.walkingrpg.shared.domain.feedback.WalkEvent
 import com.walkingrpg.shared.domain.walk.LocationPermissionStatus
 import com.walkingrpg.shared.domain.walk.WalkRecordingSnapshot
 import com.walkingrpg.shared.domain.walk.WalkSessionSummary
@@ -126,7 +127,10 @@ fun HomeContent(
             }
 
             item {
-                RecordingCard(recording = uiState.recording)
+                RecordingCard(
+                    recording = uiState.recording,
+                    walkEvent = uiState.walkEvent,
+                )
             }
 
             item {
@@ -213,9 +217,15 @@ private fun PermissionCard(
     }
 }
 
-/** スパイクの計測表示（経過時間・サンプル数・最新精度・最後に取れてからの経過）。 */
+/**
+ * スパイクの計測表示（経過時間・サンプル数・最新精度・最後に取れてからの経過）。
+ *
+ * 歩行中のイベント（issue #12）はここに断片1行だけ足す。design.md §3
+ * 「画面に出続けるのは最小限（地図＋記録中の表示だけ）」に沿って、
+ * カードを増やさず記録中表示の中に収める。
+ */
 @Composable
-private fun RecordingCard(recording: WalkRecordingSnapshot) {
+private fun RecordingCard(recording: WalkRecordingSnapshot, walkEvent: WalkEvent?) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -235,6 +245,13 @@ private fun RecordingCard(recording: WalkRecordingSnapshot) {
                 label = "最終取得から",
                 value = recording.lastSampleAgeMs?.let { formatElapsed(it) } ?: "-",
             )
+            walkEvent?.let { event ->
+                Text(
+                    text = walkEventFragment(event),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
             if (recording.isStalled()) {
                 Text(
                     text = "サンプルが途切れています",

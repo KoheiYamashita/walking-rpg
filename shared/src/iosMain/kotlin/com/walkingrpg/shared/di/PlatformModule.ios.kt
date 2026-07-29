@@ -4,9 +4,11 @@ import com.walkingrpg.shared.domain.steps.DailyStepsSource
 import com.walkingrpg.shared.platform.AppSettings
 import com.walkingrpg.shared.platform.DatabaseDriverFactory
 import com.walkingrpg.shared.platform.FileShare
+import com.walkingrpg.shared.platform.Haptics
 import com.walkingrpg.shared.platform.IosAppSettings
 import com.walkingrpg.shared.platform.IosDailyStepsSource
 import com.walkingrpg.shared.platform.IosDatabaseDriverFactory
+import com.walkingrpg.shared.platform.IosHaptics
 import com.walkingrpg.shared.platform.IosFileShare
 import com.walkingrpg.shared.platform.IosLocationPermissionController
 import com.walkingrpg.shared.platform.IosLocationProvider
@@ -33,6 +35,9 @@ actual val platformModule: Module = module {
     single<WalkNotifier> { IosWalkNotifier() }
     single<FileShare> { IosFileShare() }
     single<DatabaseDriverFactory> { IosDatabaseDriverFactory() }
+
+    // --- 歩行中フィードバック（issue #12）。実装は #3 でCore Hapticsに差し替える ---
+    single<Haptics> { IosHaptics() }
 
     // --- 押し忘れ救済（issue #7） ---
     // HealthKit は後続issue。今は常に「取れなかった」を返す

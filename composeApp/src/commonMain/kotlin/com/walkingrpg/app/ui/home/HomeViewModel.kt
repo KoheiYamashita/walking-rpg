@@ -3,6 +3,8 @@ package com.walkingrpg.app.ui.home
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.walkingrpg.shared.domain.GetPlatformNameUseCase
+import com.walkingrpg.shared.domain.feedback.ObserveWalkEventsUseCase
+import com.walkingrpg.shared.domain.feedback.WalkEvent
 import com.walkingrpg.shared.domain.osm.GetOsmMasterCountsUseCase
 import com.walkingrpg.shared.domain.osm.ImportOsmAreaUseCase
 import com.walkingrpg.shared.domain.osm.OsmImportResult
@@ -37,8 +39,20 @@ data class HomeUiState(
     val sessions: List<WalkSessionSummary> = emptyList(),
     val osmImport: OsmImportUiState = OsmImportUiState(),
     val message: String? = null,
+    /**
+     * 歩行中に最後に起きたイベント（design.md §3「信号待ちなどで見た場合も、
+     * 出るのは1〜2文の断片だけ」）。振動そのものは画面を経由しないので、
+     * これは「たまたま見た人にだけ出る1行」でしかない。
+     */
+    val lastWalkEvent: WalkEvent? = null,
 ) {
     val isWalking: Boolean get() = recording.isRecording
+
+    /**
+     * いま画面に出してよい断片の元。**いまの散歩のイベントだけ**を通す
+     * （前回の散歩の断片が次の散歩の頭に残らない。消す処理を別に持たずに済む）。
+     */
+    val walkEvent: WalkEvent? get() = lastWalkEvent?.takeIf { it.sessionId == recording.sessionId }
 
     val needsPermission: Boolean get() = permission != LocationPermissionStatus.GRANTED
 }
@@ -78,6 +92,7 @@ class HomeViewModel(
     private val requestLocationPermission: RequestLocationPermissionUseCase,
     private val refreshLocationPermission: RefreshLocationPermissionUseCase,
     private val exportWalkSession: ExportWalkSessionUseCase,
+    observeWalkEvents: ObserveWalkEventsUseCase,
     private val importOsmArea: ImportOsmAreaUseCase,
     private val getOsmMasterCounts: GetOsmMasterCountsUseCase,
 ) : ViewModel() {
@@ -102,6 +117,13 @@ class HomeViewModel(
         viewModelScope.launch {
             observeLocationPermission().collect { permission ->
                 _uiState.update { it.copy(permission = permission) }
+            }
+        }
+        // 歩行中フィードバック（issue #12）。振動は WalkFeedbackImpl が直接鳴らすので、
+        // ここは「画面を見ていたら断片が1行だけ出る」ぶんだけを受け持つ。
+        viewModelScope.launch {
+            observeWalkEvents().collect { event ->
+                _uiState.update { it.copy(lastWalkEvent = event) }
             }
         }
         viewModelScope.launch { refreshOsmCounts() }

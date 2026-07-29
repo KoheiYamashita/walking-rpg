@@ -1,6 +1,7 @@
 package com.walkingrpg.shared.data
 
 import com.walkingrpg.shared.domain.Clock
+import com.walkingrpg.shared.domain.feedback.WalkFeedback
 import com.walkingrpg.shared.domain.setup.HomeAnchor
 import com.walkingrpg.shared.domain.setup.LlmConnectionSettings
 import com.walkingrpg.shared.domain.setup.SetupRepository
@@ -11,6 +12,7 @@ import com.walkingrpg.shared.domain.walk.SessionEndReason
 import com.walkingrpg.shared.domain.walk.WalkSession
 import com.walkingrpg.shared.domain.walk.WalkSessionRepository
 import com.walkingrpg.shared.domain.walk.WalkSessionSummary
+import com.walkingrpg.shared.platform.Haptics
 import com.walkingrpg.shared.platform.LocationProvider
 import com.walkingrpg.shared.platform.SessionKeeper
 import com.walkingrpg.shared.platform.WalkNotifier
@@ -47,6 +49,34 @@ internal class FakeWalkNotifier : WalkNotifier {
 
     override fun notifyHomecoming(durationMs: Long) {
         homecomings += durationMs
+    }
+}
+
+internal class FakeHaptics : Haptics {
+    /** 振動した回数。レート制限の検証で見たいのは回数だけ（強さも長さも作らない）。 */
+    var vibrations = 0
+        private set
+
+    override fun vibrateOnce() {
+        vibrations++
+    }
+}
+
+/**
+ * 歩行中フィードバックの受け口だけを持つ差し替え（issue #12）。
+ * 記録の結線を見るテストでは「何を渡したか」だけが関心で、判定は
+ * `WalkFeedbackImplTest` / `LiveGrowthEstimatorTest` が見る。
+ */
+internal class FakeWalkFeedback : WalkFeedback {
+    val startedSessions = mutableListOf<Long>()
+    val samples = mutableListOf<LocationSample>()
+
+    override suspend fun walkStarted(sessionId: Long) {
+        startedSessions += sessionId
+    }
+
+    override suspend fun sampleRecorded(sample: LocationSample) {
+        samples += sample
     }
 }
 
