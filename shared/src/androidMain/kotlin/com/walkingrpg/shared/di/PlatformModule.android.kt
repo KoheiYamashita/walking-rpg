@@ -9,6 +9,8 @@ import com.walkingrpg.shared.platform.AndroidSecureStorage
 import com.walkingrpg.shared.platform.AndroidSessionKeeper
 import com.walkingrpg.shared.platform.AndroidWalkNotifier
 import com.walkingrpg.shared.platform.AppSettings
+import com.walkingrpg.shared.platform.AndroidHaptics
+import com.walkingrpg.shared.platform.Haptics
 import com.walkingrpg.shared.domain.steps.DailyStepsSource
 import com.walkingrpg.shared.platform.DatabaseDriverFactory
 import com.walkingrpg.shared.platform.FileShare
@@ -38,6 +40,9 @@ actual val platformModule: Module = module {
     single<WalkNotifier> { AndroidWalkNotifier(androidContext()) }
     single<FileShare> { AndroidFileShare(androidContext()) }
     single<DatabaseDriverFactory> { AndroidDatabaseDriverFactory(androidContext()) }
+
+    // --- 歩行中フィードバック（issue #12） ---
+    single<Haptics> { AndroidHaptics(androidContext()) }
 
     // --- 押し忘れ救済（issue #7） ---
     single<DailyStepsSource> { HealthConnectDailyStepsSource(androidContext()) }

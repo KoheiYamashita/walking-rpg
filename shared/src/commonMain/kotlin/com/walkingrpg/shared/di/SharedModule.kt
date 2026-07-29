@@ -9,6 +9,8 @@ import com.walkingrpg.shared.data.WalkSessionExporterImpl
 import com.walkingrpg.shared.data.SetupRepositoryImpl
 import com.walkingrpg.shared.data.WalkSessionRepositoryImpl
 import com.walkingrpg.shared.data.createDatabase
+import com.walkingrpg.shared.data.feedback.InMemoryWalkEventBus
+import com.walkingrpg.shared.data.feedback.WalkFeedbackImpl
 import com.walkingrpg.shared.data.growth.InMemoryRecentGrowthRepository
 import com.walkingrpg.shared.data.growth.WayGrowthRepositoryImpl
 import com.walkingrpg.shared.data.llm.HttpLlmConnectionTester
@@ -20,9 +22,19 @@ import com.walkingrpg.shared.data.osm.OverpassOsmAreaSource
 import com.walkingrpg.shared.data.osm.osmHttpClient
 import com.walkingrpg.shared.data.steps.StepImportRepositoryImpl
 import com.walkingrpg.shared.data.steps.SystemCalendarDays
+import com.walkingrpg.shared.data.weather.HttpWeatherProviderSelector
+import com.walkingrpg.shared.data.weather.OpenMeteoWeatherProvider
+import com.walkingrpg.shared.data.weather.OpenWeatherMapWeatherProvider
+import com.walkingrpg.shared.data.weather.SessionWeatherRepositoryImpl
+import com.walkingrpg.shared.data.weather.VisualCrossingWeatherProvider
+import com.walkingrpg.shared.data.weather.weatherHttpClient
 import com.walkingrpg.shared.domain.Clock
 import com.walkingrpg.shared.domain.GetPlatformNameUseCase
 import com.walkingrpg.shared.domain.SystemInfoRepository
+import com.walkingrpg.shared.domain.feedback.ObserveWalkEventsUseCase
+import com.walkingrpg.shared.domain.feedback.WalkEventBus
+import com.walkingrpg.shared.domain.feedback.WalkFeedback
+import com.walkingrpg.shared.domain.feedback.WalkFeedbackConfig
 import com.walkingrpg.shared.domain.growth.GrowthConfig
 import com.walkingrpg.shared.domain.growth.ObserveGrowthUpdatesUseCase
 import com.walkingrpg.shared.domain.growth.RecentGrowthRepository
@@ -65,6 +77,10 @@ import com.walkingrpg.shared.domain.walk.StopWalkSessionUseCase
 import com.walkingrpg.shared.domain.walk.WalkRecorder
 import com.walkingrpg.shared.domain.walk.WalkSessionExporter
 import com.walkingrpg.shared.domain.walk.WalkSessionRepository
+import com.walkingrpg.shared.domain.weather.FetchMissingSessionWeatherUseCase
+import com.walkingrpg.shared.domain.weather.SessionWeatherRepository
+import com.walkingrpg.shared.domain.weather.WeatherFetchConfig
+import com.walkingrpg.shared.domain.weather.WeatherProviderSelector
 import com.walkingrpg.shared.platform.Platform
 import com.walkingrpg.shared.platform.currentPlatform
 import kotlinx.coroutines.CoroutineScope
@@ -90,6 +106,12 @@ private val OSM_HTTP_CLIENT = named("osmHttpClient")
  * リトライなし・短いタイムアウトで、OSM取り込み用とは方針が違うので分けてある。
  */
 private val LLM_HTTP_CLIENT = named("llmHttpClient")
+
+/**
+ * 天候取得用のHTTPクライアント（issue #11）。
+ * リトライしない（失敗は次回起動時にやり直す）ぶん、他の2つとは方針が違う。
+ */
+private val WEATHER_HTTP_CLIENT = named("weatherHttpClient")
 
 /**
  * shared モジュールのDI定義。
@@ -122,6 +144,7 @@ val sharedModule = module {
             sessionKeeper = get(),
             setupRepository = get(),
             walkNotifier = get(),
+            walkFeedback = get(),
             clock = get(),
             scope = get(APP_SCOPE),
             homeArrivalConfig = get(),
@@ -173,12 +196,51 @@ val sharedModule = module {
     // セッション終了イベントとの結線は AppViewModel（#10）。
     factoryOf(::RecomputeAfterWalkUseCase)
 
+    // --- 歩行中フィードバック（issue #12） ---
+    // 振動の回数制限（WalkFeedbackConfig）はここで差し替えられる。UIからは触らせない。
+    single { WalkFeedbackConfig.DEFAULT }
+    // 出す側（記録の収集）と読む側（画面）が同じ1個を見る必要があるので single。
+    // 永続化しない理由は WalkEventBus のKDoc。
+    single<WalkEventBus> { InMemoryWalkEventBus() }
+    // 歩行中は導出テーブルを書かない「見込み」判定（LiveGrowthEstimator のKDoc）。
+    // 確定するのは帰宅後の RecomputeAfterWalkUseCase。記録中セッションと1対1なので single。
+    single<WalkFeedback> {
+        WalkFeedbackImpl(
+            osmMasterRepository = get(),
+            passageRepository = get(),
+            eventBus = get(),
+            haptics = get(),
+            matchingConfig = get(),
+            growthConfig = get(),
+            feedbackConfig = get(),
+        )
+    }
+    factoryOf(::ObserveWalkEventsUseCase)
+
     // --- 押し忘れ救済（issue #7） ---
     // 歩数計（DailyStepsSource）の実装はプラットフォーム側（platformModule）。
     // 呼び出しタイミング（アプリ起動時）の結線は #16 で行う。
     single<CalendarDays> { SystemCalendarDays(get()) }
     single<StepImportRepository> { StepImportRepositoryImpl(get()) }
     factoryOf(::ImportDailyStepsUseCase)
+
+    // --- 天候の後付け取得（issue #11） ---
+    // 諦めるまでの猶予・1回の実行で投げる上限（WeatherFetchConfig）はここで差し替えられる。
+    // どのプロバイダを使うかはユーザーの設定（WeatherSettings）で決まるので、
+    // 3実装を全部登録して HttpWeatherProviderSelector に振り分けさせる。
+    single { WeatherFetchConfig.DEFAULT }
+    single(WEATHER_HTTP_CLIENT) { weatherHttpClient() }
+    single { OpenMeteoWeatherProvider(get(WEATHER_HTTP_CLIENT)) }
+    single { OpenWeatherMapWeatherProvider(get(WEATHER_HTTP_CLIENT)) }
+    single { VisualCrossingWeatherProvider(get(WEATHER_HTTP_CLIENT)) }
+    single<WeatherProviderSelector> { HttpWeatherProviderSelector(get(), get(), get()) }
+    single<SessionWeatherRepository> { SessionWeatherRepositoryImpl(get()) }
+    // 散歩終了時とアプリ起動時の両方から呼ぶ1本（AppViewModel で結線）。
+    // UseCase では例外的に single にする：2つの呼び出し口が並行したときに
+    // 同じセッションへ二度問い合わせないよう、実行を Mutex で直列化しており、
+    // その Mutex は全ての呼び出しで同じ1個でなければ意味がない
+    // （FetchMissingSessionWeatherUseCase のKDoc「実行は直列」）。
+    singleOf(::FetchMissingSessionWeatherUseCase)
 
     // --- 初回セットアップ（issue #6） ---
     // 秘密（APIキー・自宅座標）と非秘密（URL・モデル名・完了フラグ）の振り分けは

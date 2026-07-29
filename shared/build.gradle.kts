@@ -53,6 +53,8 @@ kotlin {
         androidUnitTest.dependencies {
             // .sq のクエリはJVM上のインメモリSQLiteで実際に実行して検証する
             implementation(libs.sqldelight.sqlite.driver)
+            // KoinのDIグラフ検証（verify）。JVM限定APIなので commonTest には置けない
+            implementation(libs.koin.test)
         }
         androidMain.dependencies {
             implementation(libs.kotlinx.coroutines.android)

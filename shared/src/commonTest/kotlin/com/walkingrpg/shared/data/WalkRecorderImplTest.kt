@@ -1,7 +1,16 @@
 package com.walkingrpg.shared.data
 
+import com.walkingrpg.shared.data.feedback.InMemoryWalkEventBus
+import com.walkingrpg.shared.data.feedback.WalkFeedbackImpl
+import com.walkingrpg.shared.domain.FakeOsmMasterRepository
+import com.walkingrpg.shared.domain.FakePassageRepository
+import com.walkingrpg.shared.domain.feedback.WalkEvent
+import com.walkingrpg.shared.domain.feedback.WalkFeedback
+import com.walkingrpg.shared.domain.feedback.WalkFeedbackConfig
+import com.walkingrpg.shared.domain.map.GeoPoint
 import com.walkingrpg.shared.domain.setup.DEFAULT_HOME_BLUR_RADIUS_METERS
 import com.walkingrpg.shared.domain.setup.HomeAnchor
+import com.walkingrpg.shared.domain.testWay
 import com.walkingrpg.shared.domain.walk.LocationFix
 import com.walkingrpg.shared.domain.walk.LocationUnavailableException
 import com.walkingrpg.shared.domain.walk.SessionEndReason
@@ -37,12 +46,14 @@ class WalkRecorderImplTest {
         // 既定は自宅未登録＝自動終了なし。ここを見ないテストが自動終了に巻き込まれない
         setup: FakeSetupRepository = FakeSetupRepository(),
         notifier: FakeWalkNotifier = FakeWalkNotifier(),
+        feedback: WalkFeedback = FakeWalkFeedback(),
     ) = WalkRecorderImpl(
         locationProvider = provider,
         sessionRepository = repository,
         sessionKeeper = keeper,
         setupRepository = setup,
         walkNotifier = notifier,
+        walkFeedback = feedback,
         clock = clock,
         scope = backgroundScope,
     )
@@ -524,6 +535,92 @@ class WalkRecorderImplTest {
         assertEquals(1, notifier.homecomings.size)
     }
 
+    // --- 歩行中フィードバック（issue #12：記録 → 見込み判定 → 振動の結線） ---
+
+    @Test
+    fun 段階アップ相当のサンプル列で振動が1回だけ来る() = runTest {
+        val provider = FakeLocationProvider()
+        val haptics = FakeHaptics()
+        val eventBus = InMemoryWalkEventBus()
+        val feedback = WalkFeedbackImpl(
+            // 自宅から真北100mまでが1本の道（testWay の既定形状＝HOME からの直線）
+            osmMasterRepository = FakeOsmMasterRepository(ways = listOf(testWay(id = 1L))),
+            // 未踏の道：1回通れば必ず草に上がる（GrowthConfig.GRASS_PASS_COUNT）
+            passageRepository = FakePassageRepository(),
+            eventBus = eventBus,
+            haptics = haptics,
+        )
+        val recorder = recorder(provider = provider, feedback = feedback)
+
+        recorder.start()
+        runCurrent()
+        // 5秒ごとに5m進む（＝1 m/s、歩行速度）。2件目でスナップの塊が成立する
+        repeat(4) { index ->
+            provider.fixes.emit(
+                fix(ts = 1_000L + index * 5_000L, metersFromHome = index * 5.0),
+            )
+        }
+        runCurrent()
+
+        // 同じ道を歩き続けても通過は1回＝振動も1回
+        assertEquals(1, haptics.vibrations)
+        val sessionId = recorder.state.value.sessionId
+        val events = eventBus.eventsOf(assertNotNull(sessionId))
+        assertEquals(1, events.size)
+        assertEquals(1L, (events.single() as WalkEvent.GrowthStageUp).wayId)
+    }
+
+    @Test
+    fun 振動の上限を超えたぶんは無音でイベントだけ記録される() = runTest {
+        val provider = FakeLocationProvider()
+        val haptics = FakeHaptics()
+        val eventBus = InMemoryWalkEventBus()
+        val feedback = WalkFeedbackImpl(
+            // 自宅から真北へ2本つながった道（0〜111m と 111〜222m）。どちらも未踏なので、
+            // 通れば必ず草に上がる＝1回の散歩でイベントが2件出る
+            osmMasterRepository = FakeOsmMasterRepository(
+                ways = listOf(testWay(id = 1L), NEXT_WAY),
+            ),
+            passageRepository = FakePassageRepository(),
+            eventBus = eventBus,
+            haptics = haptics,
+            // 1回だけ鳴らす設定にして、2回目以降が無音になることを見る
+            feedbackConfig = WalkFeedbackConfig(
+                maxVibrationsPerWalk = 1,
+                minVibrationIntervalMs = 0L,
+            ),
+        )
+        val recorder = recorder(provider = provider, feedback = feedback)
+
+        recorder.start()
+        runCurrent()
+        // 1本目を歩いてから2本目へ移る（60秒で145m＝2.4 m/s、歩行速度の範囲）
+        listOf(0.0, 5.0, 150.0, 155.0).forEachIndexed { index, meters ->
+            provider.fixes.emit(fix(ts = 1_000L + index * 60_000L, metersFromHome = meters))
+        }
+        runCurrent()
+
+        val events = eventBus.eventsOf(assertNotNull(recorder.state.value.sessionId))
+        assertEquals(2, events.size, "イベントは全部記録される（振り返りには全部出る）")
+        assertEquals(1, haptics.vibrations, "振動は上限まで")
+    }
+
+    @Test
+    fun 記録開始と各サンプルがフィードバックに流れる() = runTest {
+        val provider = FakeLocationProvider()
+        val feedback = FakeWalkFeedback()
+        val recorder = recorder(provider = provider, feedback = feedback)
+
+        recorder.start()
+        runCurrent()
+        provider.fixes.emit(fix(ts = 1_100L))
+        provider.fixes.emit(fix(ts = 1_200L))
+        runCurrent()
+
+        assertEquals(listOf(recorder.state.value.sessionId), feedback.startedSessions)
+        assertEquals(2, feedback.samples.size)
+    }
+
     private companion object {
         const val HOME_LATITUDE = 35.0
         const val HOME_LONGITUDE = 139.0
@@ -535,6 +632,15 @@ class WalkRecorderImplTest {
             latitude = HOME_LATITUDE,
             longitude = HOME_LONGITUDE,
             blurRadiusMeters = DEFAULT_HOME_BLUR_RADIUS_METERS,
+        )
+
+        /** `testWay` の既定形状（自宅から真北111m）の続き。111〜222mの区間。 */
+        val NEXT_WAY = testWay(
+            id = 2L,
+            points = listOf(
+                GeoPoint(latitude = 35.001, longitude = HOME_LONGITUDE),
+                GeoPoint(latitude = 35.002, longitude = HOME_LONGITUDE),
+            ),
         )
     }
 }

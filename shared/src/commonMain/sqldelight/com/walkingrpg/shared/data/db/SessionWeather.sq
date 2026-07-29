@@ -1,0 +1,44 @@
+-- 天候の後付け確定（architecture.md §4 / design.md §9「天候は後付けで確定する」）。
+-- セッションのタイムスタンプ＋位置から、帰宅後に天候APIで取得して1セッション1行入れる。
+--
+-- 真実の源（walk_session / location_sample）に準ずる扱い：外部APIの観測値であって、
+-- 手元のログからは二度と再計算できない（過去日の天候は遡れる期間に限りがある）。
+-- 導出テーブルのように「捨てて作り直す」ことはしないこと。
+--
+-- 「まだ取れていない」と「天候不明で確定」を**行の有無**で分ける：
+-- - 行が無い → 未取得。次回起動時のリトライ対象
+-- - 行があって condition = 'UNKNOWN' → 諦めて確定させた。もうリトライしない
+-- 同じ列に混ぜると、永遠に埋まらないセッションを起動のたびに問い合わせ続けることになる
+-- （設計の詳細は SessionWeather / FetchMissingSessionWeatherUseCase のKDoc）。
+
+CREATE TABLE session_weather (
+    session_id  INTEGER NOT NULL PRIMARY KEY REFERENCES walk_session(id),
+    condition   TEXT NOT NULL,  -- WeatherCondition の name
+    temperature REAL,           -- 気温（℃）。プロバイダが返さなければ NULL
+    fetched_at  INTEGER NOT NULL -- epoch millis（この行を書いた時刻。セッションの時刻ではない）
+);
+
+-- 1セッション1行の置き換え。取り込みを何度流しても同じ状態に収束させるため
+-- （プロバイダを切り替えて取り直したときも、古い行が残らず上書きされる）。
+upsertSessionWeather:
+INSERT OR REPLACE INTO session_weather(session_id, condition, temperature, fetched_at)
+VALUES (?, ?, ?, ?);
+
+selectSessionWeather:
+SELECT session_id, condition, temperature, fetched_at
+FROM session_weather
+WHERE session_id = ?;
+
+-- リトライ対象（終了済みなのに天候の行が無いセッション）。
+-- 記録中（ended_at IS NULL）は含めない：位置も時刻も確定していないので訊く先が決まらない。
+-- 古い順に返すのは、取得可能期間の期限が近いものから埋めるため
+-- （1回の実行で投げる件数には上限がある。WeatherFetchConfig）。
+selectSessionIdsWithoutWeather:
+SELECT s.id
+FROM walk_session s
+LEFT JOIN session_weather w ON w.session_id = s.id
+WHERE s.ended_at IS NOT NULL AND w.session_id IS NULL
+ORDER BY s.ended_at, s.id;
+
+countSessionWeather:
+SELECT COUNT(*) FROM session_weather;

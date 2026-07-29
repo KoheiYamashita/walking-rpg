@@ -104,8 +104,13 @@ object MapMatcher {
      *
      * 同点のときはway IDの小さい方を採る。実際に同点になることはまず無いが、
      * 順序に依存しない規則を決めておかないと冪等性が崩れる。
+     *
+     * `internal` で開けてあるのは、歩行中の見込み判定
+     * （[com.walkingrpg.shared.domain.feedback.LiveGrowthEstimator]）が**同じ規則**で
+     * スナップするため。ここを写して持たせると、閾値を変えたときに
+     * 歩行中と帰宅後で乗る道が食い違う。
      */
-    private fun nearestWayId(point: GeoPoint, ways: List<Way>, config: MapMatchingConfig): Long? {
+    internal fun nearestWayId(point: GeoPoint, ways: List<Way>, config: MapMatchingConfig): Long? {
         var bestId: Long? = null
         var bestDistance = config.maxSnapDistanceMeters
         for (way in ways) {
