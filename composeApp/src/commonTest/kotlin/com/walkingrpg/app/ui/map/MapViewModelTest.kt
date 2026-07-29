@@ -18,9 +18,12 @@ import com.walkingrpg.shared.domain.walk.WalkRecorder
 import com.walkingrpg.shared.domain.walk.WalkRecordingState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -72,21 +75,42 @@ class MapViewModelTest {
     private class FakeWayGrowthRepository : WayGrowthRepository {
         var growths: List<WayGrowth> = emptyList()
 
+        /** 地図が何回組み立て直されたか（読み直しが走ったことの目印）。 */
+        var readCount = 0
+            private set
+
         override suspend fun replaceAllGrowths(growths: List<WayGrowth>) {
             this.growths = growths
         }
 
-        override suspend fun growths(): List<WayGrowth> = growths
+        override suspend fun growths(): List<WayGrowth> {
+            readCount++
+            return growths
+        }
         override suspend fun growth(wayId: Long): WayGrowth? =
             growths.firstOrNull { it.wayId == wayId }
     }
 
+    /** 本実装（`InMemoryRecentGrowthRepository`）と同じく、同じ集合でも毎回流す。 */
     private class FakeRecentGrowthRepository : RecentGrowthRepository {
-        private val _stageRaisedWayIds = MutableStateFlow<Set<Long>>(emptySet())
-        override val stageRaisedWayIds: StateFlow<Set<Long>> = _stageRaisedWayIds.asStateFlow()
+        private val _updates = MutableSharedFlow<Set<Long>>(
+            replay = 1,
+            extraBufferCapacity = 8,
+            onBufferOverflow = BufferOverflow.DROP_OLDEST,
+        )
+
+        override var stageRaisedWayIds: Set<Long> = emptySet()
+            private set
+
+        override val updates: Flow<Set<Long>> = _updates.asSharedFlow()
+
+        init {
+            _updates.tryEmit(emptySet())
+        }
 
         override fun record(wayIds: Set<Long>) {
-            _stageRaisedWayIds.value = wayIds
+            stageRaisedWayIds = wayIds
+            _updates.tryEmit(wayIds)
         }
     }
 
@@ -166,5 +190,23 @@ class MapViewModelTest {
         assertEquals(way.id, highlight.wayId)
         assertEquals(GrowthStage.GRASS, highlight.stage)
         assertTrue(highlight.isNewlyGrown, "今回育った道は強調される")
+    }
+
+    @Test
+    fun 同じ道が続けて昇格しても毎回読み直す() = runTest(dispatcher) {
+        // 毎日同じ道を通れば「段階が上がった道」の集合は2回続けて同じになる。
+        // 値の変化ではなく再計算が終わったことが合図なので、2回目も読み直す
+        val fixture = Fixture()
+        val viewModel = viewModel(fixture, ways = listOf(way))
+        advanceUntilIdle()
+        assertEquals(1, fixture.growths.readCount, "購読開始で初回の読み込みが走る")
+
+        fixture.recentGrowth.record(setOf(way.id))
+        advanceUntilIdle()
+        assertEquals(2, fixture.growths.readCount)
+
+        fixture.recentGrowth.record(setOf(way.id))
+        advanceUntilIdle()
+        assertEquals(3, fixture.growths.readCount)
     }
 }

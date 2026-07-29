@@ -12,9 +12,10 @@ import com.walkingrpg.shared.domain.osm.Poi
 import com.walkingrpg.shared.domain.osm.Way
 import com.walkingrpg.shared.domain.walk.CurrentLocationRepository
 import com.walkingrpg.shared.domain.walk.LocationFix
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 
 /**
  * 導出（passage → way_growth → 地図）まわりのテスト用リポジトリ。
@@ -89,15 +90,28 @@ internal class FakeRecentGrowthRepository(
     initial: Set<Long> = emptySet(),
 ) : RecentGrowthRepository {
 
-    private val _stageRaisedWayIds = MutableStateFlow(initial)
-    override val stageRaisedWayIds: StateFlow<Set<Long>> = _stageRaisedWayIds.asStateFlow()
+    private val _updates = MutableSharedFlow<Set<Long>>(
+        replay = 1,
+        extraBufferCapacity = 8,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+
+    override var stageRaisedWayIds: Set<Long> = initial
+        private set
+
+    override val updates: Flow<Set<Long>> = _updates.asSharedFlow()
 
     /** `record` に渡された履歴（0件でも記録されることを見たいので列で持つ）。 */
     val recorded = mutableListOf<Set<Long>>()
 
+    init {
+        _updates.tryEmit(initial)
+    }
+
     override fun record(wayIds: Set<Long>) {
         recorded += wayIds
-        _stageRaisedWayIds.value = wayIds
+        stageRaisedWayIds = wayIds
+        _updates.tryEmit(wayIds)
     }
 }
 

@@ -25,8 +25,14 @@ interface WalkSessionRepository {
      *
      * 終了時刻は「そのセッションで最後に取れたサンプルの時刻」（1件も無ければ開始時刻）。
      * 畳む時点の現在時刻ではないので、何日後に起動しても継続時間は汚れない。
+     *
+     * @return 畳んだセッションのID（開きっぱなしが無ければ空）。呼び出し側がこのIDで
+     *  導出（`passage` → `way_growth`）を作り直せるように返す：クラッシュで畳まれた散歩も
+     *  サンプルは真実として残っているので、育ちに反映されなければならない。
+     *  `passage` の作り直しはセッション単位なので、ここで拾い損ねると
+     *  **後続の散歩では二度と救われない**。
      */
-    suspend fun abandonOpenSessions()
+    suspend fun abandonOpenSessions(): List<Long>
 
     /** セッション一覧（新しい順）。DBの変更に追従する。 */
     fun observeSessions(): Flow<List<WalkSessionSummary>>

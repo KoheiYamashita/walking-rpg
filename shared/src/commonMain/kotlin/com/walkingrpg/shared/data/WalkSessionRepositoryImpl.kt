@@ -53,8 +53,14 @@ internal class WalkSessionRepositoryImpl(
     }
 
     // 終了時刻は「最後のサンプルのts（無ければstarted_at）」で、SQL側（WalkSession.sq）で決める。
-    override suspend fun abandonOpenSessions(): Unit = withContext(dispatcher) {
-        sessions.abandonOpenSessions(endReason = SessionEndReason.ABANDONED.name)
+    // IDの取得と更新は同じトランザクションに入れる：畳んだあとでは「開いていた行」を
+    // 引き直せないので、間に別の書き込みが挟まると返すIDと畳んだ行がずれる。
+    override suspend fun abandonOpenSessions(): List<Long> = withContext(dispatcher) {
+        sessions.transactionWithResult {
+            val abandoned = sessions.selectOpenSessionIds().executeAsList()
+            sessions.abandonOpenSessions(endReason = SessionEndReason.ABANDONED.name)
+            abandoned
+        }
     }
 
     override fun observeSessions(): Flow<List<WalkSessionSummary>> =

@@ -76,8 +76,10 @@ internal class WalkRecorderImpl(
         if (_state.value.isRecording) return@withLock
 
         // 前回アプリが落ちて開きっぱなしのセッションがあれば畳んでおく
-        // （終了時刻は最後のサンプルの時刻。決めるのはリポジトリ側）
-        sessionRepository.abandonOpenSessions()
+        // （終了時刻は最後のサンプルの時刻。決めるのはリポジトリ側）。
+        // 畳んだぶんも終了イベントに乗せる：クラッシュで終わった散歩もサンプルは
+        // 残っているので、他の畳み方と同じく導出を作り直さなければならない。
+        sessionRepository.abandonOpenSessions().forEach(_finishedSessions::tryEmit)
 
         val startedAtMs = clock.nowMillis()
         val sessionId = sessionRepository.startSession(startedAtMs)

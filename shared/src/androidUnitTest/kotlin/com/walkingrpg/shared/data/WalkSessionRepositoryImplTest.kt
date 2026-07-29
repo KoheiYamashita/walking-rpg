@@ -75,10 +75,25 @@ class WalkSessionRepositoryImplTest {
         repository.appendSample(sample(sessionId, ts = 2_000L))
         repository.endSession(sessionId, endedAtMs = 4_000L, reason = SessionEndReason.MANUAL)
 
-        repository.abandonOpenSessions()
+        val abandoned = repository.abandonOpenSessions()
 
         val session = checkNotNull(repository.session(sessionId))
         assertEquals(4_000L, session.endedAtMs)
         assertEquals(SessionEndReason.MANUAL, session.endReason)
+        assertEquals(emptyList(), abandoned, "確定済みは返さない")
+    }
+
+    @Test
+    fun 畳んだセッションのIDを返す() = runTest {
+        // 呼び出し側はこのIDで導出（passage → way_growth）を作り直す
+        val repository = repository()
+        val first = repository.startSession(startedAtMs = 1_000L)
+        val second = repository.startSession(startedAtMs = 10_000L)
+        repository.endSession(second, endedAtMs = 11_000L, reason = SessionEndReason.MANUAL)
+        val third = repository.startSession(startedAtMs = 20_000L)
+
+        assertEquals(listOf(first, third), repository.abandonOpenSessions())
+        // 畳んだあとは対象が無くなる（同じセッションを二度作り直さない）
+        assertEquals(emptyList(), repository.abandonOpenSessions())
     }
 }

@@ -129,7 +129,8 @@ internal class FakeWalkSessionRepository : WalkSessionRepository {
     }
 
     // 本実装（SQL）と同じく、終了時刻は最後のサンプルの時刻。無ければ開始時刻。
-    override suspend fun abandonOpenSessions() {
+    override suspend fun abandonOpenSessions(): List<Long> {
+        val abandoned = sessionsState.value.filter { it.isOpen }.map { it.id }
         sessionsState.value = sessionsState.value.map { session ->
             if (session.isOpen) {
                 session.copy(
@@ -141,6 +142,7 @@ internal class FakeWalkSessionRepository : WalkSessionRepository {
                 session
             }
         }
+        return abandoned
     }
 
     override fun observeSessions(): Flow<List<WalkSessionSummary>> =

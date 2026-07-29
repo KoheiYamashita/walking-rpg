@@ -7,11 +7,11 @@ import kotlinx.coroutines.flow.Flow
  *
  * 流れてくる集合そのもの（段階が上がった道のID）よりも、**流れてきたこと**に意味がある：
  * 地図画面はこれを合図に `GetMapSceneUseCase` を引き直せば、開いたままでも
- * 散歩ぶんの色が乗る。[RecentGrowthRepository] が [kotlinx.coroutines.flow.StateFlow] なので、
- * 購読開始時にも現在値が1回流れる＝画面の初回読み込みもこの購読1本で足りる。
+ * 散歩ぶんの色が乗る。購読開始時にも現在値が1回流れる＝画面の初回読み込みも
+ * この購読1本で足りる（[RecentGrowthRepository.updates]）。
  */
 class ObserveGrowthUpdatesUseCase(
     private val recentGrowthRepository: RecentGrowthRepository,
 ) {
-    operator fun invoke(): Flow<Set<Long>> = recentGrowthRepository.stageRaisedWayIds
+    operator fun invoke(): Flow<Set<Long>> = recentGrowthRepository.updates
 }

@@ -167,14 +167,14 @@ class RecomputeWayGrowthTest {
         // 1回目：本通りに草が生える
         val first = afterWalk(walkMainStreet(fixture))
         assertEquals(setOf(mainStreet.id), first.stageRaisedWayIds)
-        assertEquals(setOf(mainStreet.id), fixture.recentGrowth.stageRaisedWayIds.value)
+        assertEquals(setOf(mainStreet.id), fixture.recentGrowth.stageRaisedWayIds)
 
         // 2回目：曲がった先が初踏破。本通りは通過2回目で段階は据え置き
         val second = afterWalk(walkAndTurnNorth(fixture))
         assertEquals(setOf(crossStreet.id), second.stageRaisedWayIds)
         assertEquals(
             setOf(crossStreet.id),
-            fixture.recentGrowth.stageRaisedWayIds.value,
+            fixture.recentGrowth.stageRaisedWayIds,
             "前回の散歩の強調は次の再計算で消える",
         )
     }

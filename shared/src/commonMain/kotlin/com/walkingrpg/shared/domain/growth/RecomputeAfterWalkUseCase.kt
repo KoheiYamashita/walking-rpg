@@ -17,9 +17,9 @@ import com.walkingrpg.shared.domain.matching.RecomputePassagesUseCase
  * 成長側だけ全件の作り直しになるのは [RecomputeWayGrowthUseCase] の理由による。
  *
  * 呼び出し口はセッションの終了イベント（`ObserveFinishedWalksUseCase`）で、
- * 結線しているのは `AppViewModel`（issue #10）。手動停止・自宅到着による自動終了・
- * 測位ストリームの終了（エラー）の3経路とも、`WalkRecorder` が同じイベントを出すので
- * ここは経路を区別しない。
+ * 結線しているのは `AppViewModel`（issue #10）。手動停止・自動終了・測位エラー・
+ * クラッシュ後の放置セッションのどれでも `WalkRecorder` が同じイベントを出すので、
+ * ここは畳まれ方を区別しない。
  *
  * **冪等ではあるが、副作用がひとつある**：[RecentGrowthRepository] への記録
  * （地図の「今回育った道」の強調）。同じセッションで2回流すと、2回目の差分は

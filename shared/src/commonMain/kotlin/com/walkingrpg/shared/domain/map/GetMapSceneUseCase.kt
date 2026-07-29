@@ -59,7 +59,7 @@ class GetMapSceneUseCase(
         if (growths.isEmpty()) return emptyList()
 
         val shapeByWayId = osmMasterRepository.ways().associate { it.id to it.geometry }
-        val stageRaisedWayIds = recentGrowthRepository.stageRaisedWayIds.value
+        val stageRaisedWayIds = recentGrowthRepository.stageRaisedWayIds
 
         return growths
             .mapNotNull { growth ->

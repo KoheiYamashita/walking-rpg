@@ -45,7 +45,7 @@ class RecomputeAfterWalkUseCaseTest {
 
         assertEquals(setOf(1L, 2L), result.stageRaisedWayIds)
         assertEquals(listOf(setOf(1L, 2L)), recentGrowth.recorded)
-        assertEquals(setOf(1L, 2L), recentGrowth.stageRaisedWayIds.value)
+        assertEquals(setOf(1L, 2L), recentGrowth.stageRaisedWayIds)
     }
 
     @Test
@@ -66,13 +66,13 @@ class RecomputeAfterWalkUseCaseTest {
     fun 何も育たなかった散歩は前回の強調を消す() = runTest {
         passages.passCounts = mapOf(1L to 1)
         useCase(sessionId = 1L)
-        assertEquals(setOf(1L), recentGrowth.stageRaisedWayIds.value)
+        assertEquals(setOf(1L), recentGrowth.stageRaisedWayIds)
 
         // 通過が増えなかった（マスタ外を歩いた等）散歩
         val result = useCase(sessionId = 2L)
 
         assertEquals(emptySet(), result.stageRaisedWayIds)
-        assertEquals(emptySet(), recentGrowth.stageRaisedWayIds.value)
+        assertEquals(emptySet(), recentGrowth.stageRaisedWayIds)
     }
 
     @Test

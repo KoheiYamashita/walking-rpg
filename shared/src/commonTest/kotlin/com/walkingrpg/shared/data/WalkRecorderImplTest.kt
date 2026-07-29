@@ -340,6 +340,39 @@ class WalkRecorderImplTest {
     }
 
     @Test
+    fun 開きっぱなしのセッションを畳んだときもセッションIDが流れる() = runTest {
+        // クラッシュで残った散歩。サンプルは真実として残っているので導出はやる。
+        // passage の作り直しはセッション単位なので、ここで拾い損ねると
+        // その散歩は二度と way_growth に反映されない
+        val repository = FakeWalkSessionRepository()
+        val abandonedId = repository.startSession(startedAtMs = 0L)
+        repository.appendSample(fix(ts = 100L).toSample(abandonedId))
+        val recorder = recorder(repository = repository)
+        val finished = collectFinishedSessions(recorder)
+
+        recorder.start()
+        runCurrent()
+
+        assertEquals(
+            SessionEndReason.ABANDONED,
+            repository.sessions.first { it.id == abandonedId }.endReason,
+        )
+        assertEquals(listOf(abandonedId), finished)
+    }
+
+    @Test
+    fun 開きっぱなしが無ければ何も流れない() = runTest {
+        val recorder = recorder()
+        val finished = collectFinishedSessions(recorder)
+
+        recorder.start()
+        runCurrent()
+
+        // 始めたばかりのセッションを終了扱いにしない
+        assertEquals(emptyList(), finished)
+    }
+
+    @Test
     fun 二重に畳んでもセッションIDは1回しか流れない() = runTest {
         val provider = FakeLocationProvider(finiteFixes = listOf(fix(ts = 1_100L)))
         val repository = FakeWalkSessionRepository()
