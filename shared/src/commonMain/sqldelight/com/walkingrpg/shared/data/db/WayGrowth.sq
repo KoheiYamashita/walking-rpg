@@ -1,0 +1,48 @@
+-- 道の成長（architecture.md §4「導出（キャッシュ。いつでも捨てて再計算できる）」）。
+-- passage の集計結果でしかない＝この表は消してよい。消して
+-- RecomputeWayGrowthUseCase を流せば同じ状態が戻る（passage との性質の違いに注意：
+-- passage は再計算コストが高いので「真実の源に準ずる」扱い、こちらは純粋なキャッシュ）。
+--
+-- 持たせているのは表示のため。地図を描くたびに全通過を数え直さずに済む。
+-- 値の正しさの根拠は常に passage 側にあるので、ここの行と食い違ったら passage が正しい。
+--
+-- architecture.md のスケッチにある branch_attr（分岐成長）は入れない：
+-- MVP後回しの決定事項（design.md §10「後回しでいいもの」）で、
+-- 使わない列を先に切ると、導出の作り直しのたびに空の列を運ぶことになる。
+-- 入れるときは列を足して再計算すればよい（キャッシュなのでマイグレーション不要）。
+--
+-- way_id には外部キーを張らない：way マスタは対象圏を取り直すと作り直される（Way.sq）。
+-- マスタに無い way_id の行は、その通過が passage に残っているという意味なので消さない
+-- （表示側で way が引けなければ描かれないだけ）。
+
+CREATE TABLE way_growth (
+    way_id     INTEGER NOT NULL PRIMARY KEY,  -- OSMのway ID（1本の道に1行）
+    pass_count INTEGER NOT NULL,              -- 通過回数（1以上。0回の道は行を作らない）
+    stage      TEXT NOT NULL                  -- GrowthStage の name
+);
+
+-- 段階でまとめて引く（地図のレイヤ描画・「木になった道」の一覧）。
+CREATE INDEX way_growth_stage ON way_growth(stage);
+
+-- 再計算は deleteAllWayGrowth → insertWayGrowth を1トランザクションで回す（全件の作り直し）。
+-- 差分更新にすると、通過が消えた道（閾値を厳しくした再計算・セッション削除）の行が
+-- 取り残されて、歩いていない道が育ったまま残る。
+deleteAllWayGrowth:
+DELETE FROM way_growth;
+
+insertWayGrowth:
+INSERT INTO way_growth(way_id, pass_count, stage)
+VALUES (?, ?, ?);
+
+selectAllWayGrowth:
+SELECT way_id, pass_count, stage
+FROM way_growth
+ORDER BY way_id;
+
+selectWayGrowth:
+SELECT way_id, pass_count, stage
+FROM way_growth
+WHERE way_id = ?;
+
+countWayGrowth:
+SELECT COUNT(*) FROM way_growth;

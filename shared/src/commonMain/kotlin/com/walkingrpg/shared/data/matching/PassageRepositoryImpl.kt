@@ -46,4 +46,11 @@ internal class PassageRepositoryImpl(
             )
         }
     }
+
+    // COUNT(*) はSQLite側の型が Long。通過回数がIntに収まらないほど歩くことはないので、
+    // ドメイン（WayGrowth）はIntで受ける。
+    override suspend fun passCountsByWay(): Map<Long, Int> = withContext(dispatcher) {
+        passages.selectPassCountsByWay().executeAsList()
+            .associate { row -> row.way_id to row.pass_count.toInt() }
+    }
 }
