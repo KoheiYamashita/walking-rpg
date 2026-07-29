@@ -5,6 +5,7 @@ import com.walkingrpg.shared.domain.setup.LlmConnectionSettings
 import com.walkingrpg.shared.domain.setup.SetupRepository
 import com.walkingrpg.shared.domain.setup.WeatherProviderChoice
 import com.walkingrpg.shared.domain.setup.WeatherSettings
+import kotlinx.coroutines.yield
 
 /**
  * 天候の後付け取得まわりのテスト用差し替え。
@@ -42,6 +43,11 @@ internal class FakeWeatherProvider(
     private val observation: WeatherObservation = WeatherObservation(WeatherCondition.CLEAR, 20.0),
     /** 非nullなら毎回これを投げる（圏外・API障害の再現）。 */
     private val failure: Throwable? = null,
+    /**
+     * 問い合わせの途中で必ず1回中断する（通信は待たされるもの、の再現）。
+     * 並行実行の検証で、他のコルーチンに割り込む隙を作るために使う。
+     */
+    private val suspendWhileFetching: Boolean = false,
 ) : WeatherProvider {
 
     val queries = mutableListOf<WeatherQuery>()
@@ -50,6 +56,7 @@ internal class FakeWeatherProvider(
     override suspend fun observe(query: WeatherQuery, apiKey: String): WeatherObservation {
         queries += query
         apiKeys += apiKey
+        if (suspendWhileFetching) yield()
         failure?.let { throw it }
         return observation
     }

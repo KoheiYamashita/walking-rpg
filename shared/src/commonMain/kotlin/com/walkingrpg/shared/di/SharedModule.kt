@@ -236,7 +236,11 @@ val sharedModule = module {
     single<WeatherProviderSelector> { HttpWeatherProviderSelector(get(), get(), get()) }
     single<SessionWeatherRepository> { SessionWeatherRepositoryImpl(get()) }
     // 散歩終了時とアプリ起動時の両方から呼ぶ1本（AppViewModel で結線）。
-    factoryOf(::FetchMissingSessionWeatherUseCase)
+    // UseCase では例外的に single にする：2つの呼び出し口が並行したときに
+    // 同じセッションへ二度問い合わせないよう、実行を Mutex で直列化しており、
+    // その Mutex は全ての呼び出しで同じ1個でなければ意味がない
+    // （FetchMissingSessionWeatherUseCase のKDoc「実行は直列」）。
+    singleOf(::FetchMissingSessionWeatherUseCase)
 
     // --- 初回セットアップ（issue #6） ---
     // 秘密（APIキー・自宅座標）と非秘密（URL・モデル名・完了フラグ）の振り分けは

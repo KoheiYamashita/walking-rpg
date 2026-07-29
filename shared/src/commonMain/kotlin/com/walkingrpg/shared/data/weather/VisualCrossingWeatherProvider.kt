@@ -7,6 +7,7 @@ import com.walkingrpg.shared.domain.weather.WeatherProvider
 import com.walkingrpg.shared.domain.weather.WeatherQuery
 import io.ktor.client.HttpClient
 import io.ktor.client.request.parameter
+import kotlin.math.abs
 import kotlinx.serialization.Serializable
 
 /**
@@ -17,9 +18,14 @@ import kotlinx.serialization.Serializable
  * 端末側でタイムゾーンを決めて文字列を組み立てると、旅行先の散歩で1日ずれる余地が残る。
  * epoch 秒ならその曖昧さが無い。
  *
- * `include=current` を付けると、指定時刻の実況が `currentConditions` に入る。
- * 応答の形は契約・パラメータで変わりうるので、`days[].hours[]` / `days[]` も
- * 順に見て拾えるようにしてある（[VisualCrossingResponse]）。
+ * ## `include=hours` であって `current` ではない
+ *
+ * この用途で欲しいのは**散歩をした時刻**の天候で、「いま」ではない。
+ * `include=current` を付けると応答の `currentConditions` に**呼び出し時点の実況**が入り、
+ * 圏外だった散歩を後日リトライしたときに、その実況を散歩の天候として保存してしまう
+ * （`session_weather` は行があれば二度と取り直さないので、間違いは訂正されない）。
+ * そのため時間別（`days[].hours[]`）を要求し、[VisualCrossingResponse] でも
+ * **時間別 → 日別 → `currentConditions`** の順に落とす。
  *
  * キーはURLのクエリ（`key`）に乗る。例外にURLを出さない理由は [getWeatherJson] のKDoc。
  */
@@ -36,14 +42,15 @@ internal class VisualCrossingWeatherProvider(
         val url = "$TIMELINE_URL/${query.latitude},${query.longitude}/$epochSeconds"
         val body = httpClient.getWeatherJson(url, PROVIDER_NAME) {
             parameter("unitGroup", "metric")
-            parameter("include", "current")
-            parameter("elements", "datetime,temp,icon")
+            parameter("include", "hours")
+            // datetimeEpoch は「どの時刻の値か」を突き合わせるために要る
+            parameter("elements", "datetime,datetimeEpoch,temp,icon")
             parameter("contentType", "json")
             parameter("key", apiKey)
         }
 
-        val conditions = weatherJson.decodeFromString<VisualCrossingResponse>(body).conditions()
-            ?: missingValue(PROVIDER_NAME)
+        val conditions = weatherJson.decodeFromString<VisualCrossingResponse>(body)
+            .conditionsAt(epochSeconds) ?: missingValue(PROVIDER_NAME)
         val icon = conditions.icon ?: missingValue(PROVIDER_NAME)
         return WeatherObservation(
             condition = weatherConditionFromVisualCrossingIcon(icon),
@@ -94,23 +101,49 @@ internal fun weatherConditionFromVisualCrossingIcon(icon: String): WeatherCondit
     }
 
 /**
- * Timeline API の応答（必要な部分だけ）。
- *
- * 指定時刻の実況は `include=current` を付けたときの `currentConditions` に入るが、
- * 応答に無いこともあるので `days[0].hours[0]` → `days[0]` の順に落とす。
- * 3段とも同じ形（`temp` / `icon`）なので1つの型で受けられる。
+ * Timeline API の応答（必要な部分だけ）。3段とも同じ形（`temp` / `icon`）なので
+ * 1つの型（[VisualCrossingConditions]）で受けられる。
  */
 @Serializable
 private data class VisualCrossingResponse(
     val currentConditions: VisualCrossingConditions? = null,
     val days: List<VisualCrossingDay> = emptyList(),
 ) {
-    fun conditions(): VisualCrossingConditions? {
+    /**
+     * [epochSeconds]（＝散歩をした時刻）の天候を選ぶ。
+     *
+     * 優先順位は **時間別 → 日別 → `currentConditions`**。この順序に意味がある：
+     * `currentConditions` は「応答を作った時点」の実況なので、圏外だった散歩を
+     * 後日リトライしたときに使うと、散歩とは無関係な天候を確定値として保存してしまう。
+     * 時間別・日別は問い合わせた時刻のもので、後日リトライしても同じ値が返る。
+     * それでも最後の砦として残してあるのは、時間別も日別も無い応答で
+     * 「取れなかった」にするより、近い値でも1件返すほうが実用的なため。
+     */
+    fun conditionsAt(epochSeconds: Long): VisualCrossingConditions? {
         val day = days.firstOrNull()
-        val candidates = listOfNotNull(currentConditions, day?.hours?.firstOrNull(), day?.conditions)
+        val candidates = listOfNotNull(
+            day?.hours?.closestTo(epochSeconds),
+            day?.conditions,
+            currentConditions,
+        )
         // 天候が入っている段を選ぶ（`elements` の指定や契約によっては上の段が空で来る）
         return candidates.firstOrNull { it.icon != null } ?: candidates.firstOrNull()
     }
+}
+
+/**
+ * 指定時刻に最も近い時間別の値。
+ *
+ * 時刻が分からない（`datetimeEpoch` が無い）応答では先頭に落とす。
+ * 単一時刻の問い合わせなら、返ってくる時間別はその1時間ぶんだけなので先頭で合っている。
+ */
+private fun List<VisualCrossingConditions>.closestTo(
+    epochSeconds: Long,
+): VisualCrossingConditions? {
+    if (isEmpty()) return null
+    val dated = filter { it.datetimeEpoch != null }
+    if (dated.isEmpty()) return first()
+    return dated.minBy { hour -> abs(hour.datetimeEpoch!! - epochSeconds) }
 }
 
 @Serializable
@@ -128,4 +161,6 @@ private data class VisualCrossingConditions(
     /** `unitGroup=metric` を付けているので℃。 */
     val temp: Double? = null,
     val icon: String? = null,
+    /** その値が何時のものか（epoch秒）。`elements` で要求しているが、無い応答も許す。 */
+    val datetimeEpoch: Long? = null,
 )

@@ -52,7 +52,7 @@ class VisualCrossingWeatherProviderTest {
     @Test
     fun 応答を共通モデルに変換する() = runTest {
         val (provider, _) = provider(
-            """{"currentConditions":{"datetime":"22:00:00","temp":13.4,"icon":"rain"}}""",
+            """{"days":[{"hours":[{"datetimeEpoch":1700000400,"temp":13.4,"icon":"rain"}]}]}""",
         )
 
         val observation = provider.observe(query, apiKey = "test-key")
@@ -64,7 +64,7 @@ class VisualCrossingWeatherProviderTest {
     @Test
     fun 地点と時刻はパスに乗せ時刻はepoch秒で送る() = runTest {
         val (provider, requests) = provider(
-            """{"currentConditions":{"temp":8.0,"icon":"clear-day"}}""",
+            """{"days":[{"hours":[{"temp":8.0,"icon":"clear-day"}]}]}""",
         )
 
         provider.observe(query, apiKey = "test-key")
@@ -72,12 +72,35 @@ class VisualCrossingWeatherProviderTest {
         val url = requests.single().url
         assertTrue(url.encodedPath.endsWith("/12.34,56.78/1700000000"), url.encodedPath)
         assertEquals("metric", url.parameters["unitGroup"])
-        assertEquals("current", url.parameters["include"])
+        // 欲しいのは散歩をした時刻の天候。呼び出し時点の実況（current）ではない
+        assertEquals("hours", url.parameters["include"])
+        assertTrue("datetimeEpoch" in url.parameters["elements"]!!, "どの時刻の値かを突き合わせる")
         assertEquals("test-key", url.parameters["key"])
     }
 
     @Test
-    fun currentConditionsが無ければ時間別に落とす() = runTest {
+    fun 実況ではなく散歩した時刻の時間別を採る() = runTest {
+        // 後日リトライの再現：currentConditions は「いま」の晴れ、
+        // hours には散歩をした時刻の雨が入っている
+        val (provider, _) = provider(
+            """{
+                "currentConditions":{"datetimeEpoch":1700600000,"temp":22.0,"icon":"clear-day"},
+                "days":[{"temp":5.0,"icon":"cloudy","hours":[
+                    {"datetimeEpoch":1699996800,"temp":9.0,"icon":"cloudy"},
+                    {"datetimeEpoch":1700000400,"temp":2.5,"icon":"snow"}
+                ]}]
+            }""",
+        )
+
+        val observation = provider.observe(query, apiKey = "test-key")
+
+        assertEquals(WeatherCondition.SNOW, observation.condition, "問い合わせた時刻に最も近い1時間")
+        assertEquals(2.5, observation.temperatureCelsius)
+    }
+
+    @Test
+    fun 時間別に時刻が無ければ先頭を採る() = runTest {
+        // 単一時刻の問い合わせなら返る時間別はその1件だけなので、先頭で合っている
         val (provider, _) = provider(
             """{"days":[{"temp":5.0,"icon":"cloudy","hours":[{"temp":2.5,"icon":"snow"}]}]}""",
         )
@@ -89,18 +112,31 @@ class VisualCrossingWeatherProviderTest {
     }
 
     @Test
-    fun 時間別も無ければ日別に落とす() = runTest {
-        val (provider, _) = provider("""{"days":[{"temp":5.0,"icon":"cloudy"}]}""")
+    fun 時間別が無ければ日別に落とす() = runTest {
+        val (provider, _) = provider(
+            """{"currentConditions":{"temp":22.0,"icon":"clear-day"},
+                "days":[{"temp":5.0,"icon":"cloudy"}]}""",
+        )
 
         val observation = provider.observe(query, apiKey = "test-key")
 
-        assertEquals(WeatherCondition.CLOUDY, observation.condition)
+        assertEquals(WeatherCondition.CLOUDY, observation.condition, "実況より日別が先")
         assertEquals(5.0, observation.temperatureCelsius)
     }
 
     @Test
+    fun 時間別も日別も無ければ最後の砦としてcurrentConditionsを使う() = runTest {
+        val (provider, _) = provider("""{"currentConditions":{"temp":22.0,"icon":"clear-day"}}""")
+
+        val observation = provider.observe(query, apiKey = "test-key")
+
+        assertEquals(WeatherCondition.CLEAR, observation.condition)
+        assertEquals(22.0, observation.temperatureCelsius)
+    }
+
+    @Test
     fun キーが未入力なら通信せずに未取得として扱う() = runTest {
-        val (provider, requests) = provider("""{"currentConditions":{"icon":"clear-day"}}""")
+        val (provider, requests) = provider("""{"days":[{"hours":[{"icon":"clear-day"}]}]}""")
 
         assertFailsWith<WeatherUnavailableException> { provider.observe(query, apiKey = "") }
         assertEquals(0, requests.size)

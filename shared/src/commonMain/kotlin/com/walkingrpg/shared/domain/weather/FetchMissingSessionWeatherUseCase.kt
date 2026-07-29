@@ -4,6 +4,8 @@ import com.walkingrpg.shared.domain.Clock
 import com.walkingrpg.shared.domain.setup.SetupRepository
 import com.walkingrpg.shared.domain.walk.WalkSessionRepository
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * 天候がまだ付いていない散歩に、後付けで天候を確定させる（design.md §9・architecture.md §5「帰宅後」）。
@@ -31,6 +33,17 @@ import kotlinx.coroutines.CancellationException
  * （[SessionWeatherRepository.save]）。取れなかったセッションは**行を作らない**ので、
  * 「未取得」のまま次の実行に持ち越される。
  *
+ * ## 実行は直列（[Mutex]）
+ * 上の2つの呼び出し口は並行しうる（起動直後に散歩を畳んだ場合など）。
+ * 「未取得を読む→問い合わせる→保存する」は不可分ではないので、並行に走ると
+ * 両方が同じセッションを未取得と見なして**同じ問い合わせを二度投げる**。
+ * 保存が置き換えなので状態は壊れないが、有料・レート制限付きのAPIを無駄に叩く。
+ * そのため実行全体を [Mutex] で直列化する。後から来た実行は前の実行が
+ * 保存し終えた状態を読むので、二重に投げない。
+ *
+ * これが効くのは**呼び出し側が同じインスタンスを使う**ときだけなので、
+ * DI（`sharedModule`）では `single` で登録してある。
+ *
  * ## 失敗の扱い
  * 1セッションの失敗で残りを止めない（1件の通信失敗が他の散歩を巻き込まない）。
  * 失敗したIDは [Result.unresolvedSessionIds] に入れて返すだけで、例外にはしない。
@@ -53,7 +66,12 @@ class FetchMissingSessionWeatherUseCase(
     private val clock: Clock,
     private val config: WeatherFetchConfig = WeatherFetchConfig.DEFAULT,
 ) {
-    suspend operator fun invoke(): Result {
+    /** 実行を直列化する（上記「実行は直列」）。 */
+    private val mutex = Mutex()
+
+    suspend operator fun invoke(): Result = mutex.withLock { fetchMissing() }
+
+    private suspend fun fetchMissing(): Result {
         val pending = weatherRepository.sessionIdsWithoutWeather()
         if (pending.isEmpty()) return Result()
 

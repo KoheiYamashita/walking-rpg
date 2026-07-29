@@ -6,6 +6,7 @@ import com.walkingrpg.shared.domain.setup.WeatherProviderChoice
 import com.walkingrpg.shared.domain.setup.WeatherSettings
 import com.walkingrpg.shared.domain.walk.LocationSample
 import com.walkingrpg.shared.domain.walk.SessionEndReason
+import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -225,6 +226,28 @@ class FetchMissingSessionWeatherUseCaseTest {
         assertEquals(WeatherCondition.SNOW, result.fetched.single().condition)
         assertEquals(0, openMeteo.queries.size)
         assertEquals(listOf("test-key"), visualCrossing.apiKeys, "APIキーは選んだ実装にだけ渡す")
+    }
+
+    @Test
+    fun 同時に呼ばれても同じセッションに二度問い合わせない() = runTest {
+        // 起動時のリトライと散歩終了時の取得が重なった状況。直列化していないと
+        // 両方が同じセッションを「未取得」と読み、有料APIを二度叩く
+        val sessionId = finishedSession()
+        // 通信が待たされる＝もう片方が割り込める隙がある、の再現
+        val provider = FakeWeatherProvider(suspendWhileFetching = true)
+        val useCase = useCase(provider)
+
+        val first = async { useCase() }
+        val second = async { useCase() }
+        val results = listOf(first.await(), second.await())
+
+        assertEquals(1, provider.queries.size, "同じセッションへの問い合わせは1回だけ")
+        assertEquals(
+            listOf(sessionId),
+            results.flatMap { result -> result.fetched.map { it.sessionId } },
+            "保存も1回だけ（後から入った実行は、前の実行が保存した状態を読む）",
+        )
+        assertEquals(1, weathers.saved.size)
     }
 
     @Test

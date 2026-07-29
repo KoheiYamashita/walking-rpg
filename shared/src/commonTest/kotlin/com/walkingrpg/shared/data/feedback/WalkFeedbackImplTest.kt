@@ -4,6 +4,7 @@ import com.walkingrpg.shared.data.FakeHaptics
 import com.walkingrpg.shared.domain.FakeOsmMasterRepository
 import com.walkingrpg.shared.domain.FakePassageRepository
 import com.walkingrpg.shared.domain.feedback.WalkEvent
+import com.walkingrpg.shared.domain.feedback.WalkEventBus
 import com.walkingrpg.shared.domain.feedback.WalkFeedbackConfig
 import com.walkingrpg.shared.domain.map.GeoPoint
 import com.walkingrpg.shared.domain.matching.Passage
@@ -11,6 +12,9 @@ import com.walkingrpg.shared.domain.matching.PassageRepository
 import com.walkingrpg.shared.domain.osm.Way
 import com.walkingrpg.shared.domain.testWay
 import com.walkingrpg.shared.domain.walk.LocationSample
+import com.walkingrpg.shared.platform.Haptics
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -33,8 +37,8 @@ class WalkFeedbackImplTest {
     )
 
     private fun feedback(
-        haptics: FakeHaptics,
-        eventBus: InMemoryWalkEventBus,
+        haptics: Haptics,
+        eventBus: WalkEventBus,
         passageRepository: PassageRepository = FakePassageRepository(),
         config: WalkFeedbackConfig = WalkFeedbackConfig.DEFAULT,
         ways: List<Way> = listOf(testWay(id = 1L), NEXT_WAY),
@@ -126,6 +130,71 @@ class WalkFeedbackImplTest {
 
         assertEquals(0, haptics.vibrations)
         assertTrue(eventBus.eventsOf(SESSION_ID).isEmpty())
+    }
+
+    @Test
+    fun イベントの記録が失敗しても記録の収集に例外を伝えない() = runTest {
+        val haptics = FakeHaptics()
+
+        // 投げると WalkRecorderImpl の catch-all に落ちて、測位は健全なのに
+        // セッションが LOCATION_ERROR で畳まれる（WalkFeedback の契約）
+        feedback(haptics = haptics, eventBus = BrokenWalkEventBus()).walkTwoWays()
+
+        assertEquals(0, haptics.vibrations, "イベントを記録できなければ鳴らさない")
+    }
+
+    @Test
+    fun 振動が失敗しても記録の収集に例外を伝えない() = runTest {
+        val eventBus = InMemoryWalkEventBus()
+
+        feedback(haptics = BrokenHaptics(), eventBus = eventBus).walkTwoWays()
+
+        // 鳴らせなくてもイベントは残る（振り返りには出る）
+        assertEquals(2, eventBus.eventsOf(SESSION_ID).size)
+    }
+
+    @Test
+    fun 一度の失敗でその散歩のフィードバックを黙らせない() = runTest {
+        val haptics = FakeHaptics()
+        val eventBus = InMemoryWalkEventBus()
+        // 1本目の道のイベントだけ失敗させる
+        val flaky = FlakyWalkEventBus(eventBus, failOnEventIndex = 0)
+
+        feedback(haptics = haptics, eventBus = flaky).walkTwoWays()
+
+        // 1件目は落ちて記録も振動もされないが、2件目は普通に通る
+        assertEquals(1, eventBus.eventsOf(SESSION_ID).size)
+        assertEquals(1, haptics.vibrations)
+    }
+
+    /** 記録先が壊れている状況の再現（`publish` は歩行中に毎サンプル呼ばれる）。 */
+    private class BrokenWalkEventBus : WalkEventBus {
+        override val events: Flow<WalkEvent> = emptyFlow()
+        override fun publish(event: WalkEvent): Unit = error("イベントを記録できません")
+        override fun eventsOf(sessionId: Long): List<WalkEvent> = emptyList()
+    }
+
+    /** 何件目かだけ失敗する記録先（失敗のあとも判定が続くことの確認用）。 */
+    private class FlakyWalkEventBus(
+        private val delegate: WalkEventBus,
+        private val failOnEventIndex: Int,
+    ) : WalkEventBus {
+        private var published = 0
+
+        override val events: Flow<WalkEvent> get() = delegate.events
+
+        override fun publish(event: WalkEvent) {
+            val index = published++
+            if (index == failOnEventIndex) error("イベントを記録できません")
+            delegate.publish(event)
+        }
+
+        override fun eventsOf(sessionId: Long): List<WalkEvent> = delegate.eventsOf(sessionId)
+    }
+
+    /** 振動モーターの呼び出しが投げる端末の再現（本来 Haptics 実装は投げない契約）。 */
+    private class BrokenHaptics : Haptics {
+        override fun vibrateOnce(): Unit = error("振動させられません")
     }
 
     /** DBが壊れている・まだ作られていない状況の再現。 */
