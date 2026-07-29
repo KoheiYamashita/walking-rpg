@@ -9,6 +9,7 @@ import com.walkingrpg.shared.data.WalkSessionExporterImpl
 import com.walkingrpg.shared.data.SetupRepositoryImpl
 import com.walkingrpg.shared.data.WalkSessionRepositoryImpl
 import com.walkingrpg.shared.data.createDatabase
+import com.walkingrpg.shared.data.growth.InMemoryRecentGrowthRepository
 import com.walkingrpg.shared.data.growth.WayGrowthRepositoryImpl
 import com.walkingrpg.shared.data.llm.HttpLlmConnectionTester
 import com.walkingrpg.shared.data.matching.PassageRepositoryImpl
@@ -23,6 +24,8 @@ import com.walkingrpg.shared.domain.Clock
 import com.walkingrpg.shared.domain.GetPlatformNameUseCase
 import com.walkingrpg.shared.domain.SystemInfoRepository
 import com.walkingrpg.shared.domain.growth.GrowthConfig
+import com.walkingrpg.shared.domain.growth.ObserveGrowthUpdatesUseCase
+import com.walkingrpg.shared.domain.growth.RecentGrowthRepository
 import com.walkingrpg.shared.domain.growth.RecomputeAfterWalkUseCase
 import com.walkingrpg.shared.domain.growth.RecomputeWayGrowthUseCase
 import com.walkingrpg.shared.domain.growth.WayGrowthRepository
@@ -50,6 +53,7 @@ import com.walkingrpg.shared.domain.walk.CurrentLocationRepository
 import com.walkingrpg.shared.domain.walk.ExportWalkSessionUseCase
 import com.walkingrpg.shared.domain.walk.HomeArrivalConfig
 import com.walkingrpg.shared.domain.walk.LocationPermissionRepository
+import com.walkingrpg.shared.domain.walk.ObserveFinishedWalksUseCase
 import com.walkingrpg.shared.domain.walk.ObserveIsWalkingUseCase
 import com.walkingrpg.shared.domain.walk.ObserveLocationPermissionUseCase
 import com.walkingrpg.shared.domain.walk.ObserveWalkRecordingUseCase
@@ -129,12 +133,13 @@ val sharedModule = module {
     factoryOf(::ObserveWalkRecordingUseCase)
     factoryOf(::ObserveIsWalkingUseCase)
     factoryOf(::ObserveWalkSessionsUseCase)
+    factoryOf(::ObserveFinishedWalksUseCase)
     factoryOf(::ObserveLocationPermissionUseCase)
     factoryOf(::RequestLocationPermissionUseCase)
     factoryOf(::RefreshLocationPermissionUseCase)
     factoryOf(::ExportWalkSessionUseCase)
 
-    // --- 地図（issue #4） ---
+    // --- 地図（issue #4 / #10） ---
     // 現在地は記録用の測位（WalkRecorder）と同じ LocationProvider / 権限判定を使い回す
     single<CurrentLocationRepository> { CurrentLocationRepositoryImpl(get(), get()) }
     factoryOf(::GetMapSceneUseCase)
@@ -160,7 +165,12 @@ val sharedModule = module {
     single { GrowthConfig.DEFAULT }
     single<WayGrowthRepository> { WayGrowthRepositoryImpl(get()) }
     factoryOf(::RecomputeWayGrowthUseCase)
-    // 散歩終了時（帰宅後）の入口。passage → way_growth の順で作り直す。UI結線は #10
+    // 「今回の散歩で育った道」は永続化しない（RecentGrowthRepository のKDoc）。
+    // 書く側（再計算）と読む側（地図）が同じ1個を見る必要があるので single。
+    single<RecentGrowthRepository> { InMemoryRecentGrowthRepository() }
+    factoryOf(::ObserveGrowthUpdatesUseCase)
+    // 散歩終了時（帰宅後）の入口。passage → way_growth の順で作り直す。
+    // セッション終了イベントとの結線は AppViewModel（#10）。
     factoryOf(::RecomputeAfterWalkUseCase)
 
     // --- 押し忘れ救済（issue #7） ---

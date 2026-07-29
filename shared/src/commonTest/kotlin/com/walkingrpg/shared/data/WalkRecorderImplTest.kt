@@ -6,6 +6,7 @@ import com.walkingrpg.shared.domain.walk.LocationFix
 import com.walkingrpg.shared.domain.walk.LocationUnavailableException
 import com.walkingrpg.shared.domain.walk.SessionEndReason
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -273,6 +274,118 @@ class WalkRecorderImplTest {
         recorder.start()
 
         assertNull(recorder.state.value.error)
+    }
+
+    // --- 終了イベント（issue #10：散歩終了 → 導出の作り直しの起点） ---
+
+    /**
+     * [WalkRecorderImpl.finishedSessions] を購読して溜める。
+     * 過去のイベントは溜まらない（バッファ付きSharedFlow）ので、記録を始める前に購読する。
+     */
+    private fun TestScope.collectFinishedSessions(recorder: WalkRecorderImpl): List<Long> {
+        val finished = mutableListOf<Long>()
+        backgroundScope.launch { recorder.finishedSessions.collect { finished += it } }
+        runCurrent()
+        return finished
+    }
+
+    @Test
+    fun 手動停止でセッションIDが流れる() = runTest {
+        val repository = FakeWalkSessionRepository()
+        val recorder = recorder(repository = repository)
+        val finished = collectFinishedSessions(recorder)
+
+        recorder.start()
+        runCurrent()
+        recorder.stop()
+        runCurrent()
+
+        assertEquals(listOf(repository.sessions.single().id), finished)
+    }
+
+    @Test
+    fun 自動終了でセッションIDが流れる() = runTest {
+        val provider = FakeLocationProvider()
+        val repository = FakeWalkSessionRepository()
+        val recorder = recorder(
+            provider = provider,
+            repository = repository,
+            clock = MutableClock(0L),
+            setup = FakeSetupRepository(homeAnchor = HOME),
+        )
+        val finished = collectFinishedSessions(recorder)
+
+        recorder.start()
+        runCurrent()
+        homecomingFixes().forEach { provider.fixes.emit(it) }
+        runCurrent()
+
+        assertEquals(SessionEndReason.AUTO_ARRIVAL, repository.sessions.single().endReason)
+        assertEquals(listOf(repository.sessions.single().id), finished)
+    }
+
+    @Test
+    fun 測位が止まって畳んだときもセッションIDが流れる() = runTest {
+        // 歩いたぶんのサンプルは残っているので、エラー終了でも導出はやる
+        val provider = FakeLocationProvider(finiteFixes = listOf(fix(ts = 1_100L)))
+        val repository = FakeWalkSessionRepository()
+        val recorder = recorder(provider = provider, repository = repository)
+        val finished = collectFinishedSessions(recorder)
+
+        recorder.start()
+        runCurrent()
+
+        assertEquals(SessionEndReason.LOCATION_ERROR, repository.sessions.single().endReason)
+        assertEquals(listOf(repository.sessions.single().id), finished)
+    }
+
+    @Test
+    fun 開きっぱなしのセッションを畳んだときもセッションIDが流れる() = runTest {
+        // クラッシュで残った散歩。サンプルは真実として残っているので導出はやる。
+        // passage の作り直しはセッション単位なので、ここで拾い損ねると
+        // その散歩は二度と way_growth に反映されない
+        val repository = FakeWalkSessionRepository()
+        val abandonedId = repository.startSession(startedAtMs = 0L)
+        repository.appendSample(fix(ts = 100L).toSample(abandonedId))
+        val recorder = recorder(repository = repository)
+        val finished = collectFinishedSessions(recorder)
+
+        recorder.start()
+        runCurrent()
+
+        assertEquals(
+            SessionEndReason.ABANDONED,
+            repository.sessions.first { it.id == abandonedId }.endReason,
+        )
+        assertEquals(listOf(abandonedId), finished)
+    }
+
+    @Test
+    fun 開きっぱなしが無ければ何も流れない() = runTest {
+        val recorder = recorder()
+        val finished = collectFinishedSessions(recorder)
+
+        recorder.start()
+        runCurrent()
+
+        // 始めたばかりのセッションを終了扱いにしない
+        assertEquals(emptyList(), finished)
+    }
+
+    @Test
+    fun 二重に畳んでもセッションIDは1回しか流れない() = runTest {
+        val provider = FakeLocationProvider(finiteFixes = listOf(fix(ts = 1_100L)))
+        val repository = FakeWalkSessionRepository()
+        val recorder = recorder(provider = provider, repository = repository)
+        val finished = collectFinishedSessions(recorder)
+
+        recorder.start()
+        runCurrent()
+        // ストリーム終了で畳んだあとの手動停止（何もしない経路）
+        recorder.stop()
+        runCurrent()
+
+        assertEquals(1, finished.size)
     }
 
     // --- 自動終了（design.md §3「自宅付近＋移動停止を検知して『おかえり』を出す」） ---

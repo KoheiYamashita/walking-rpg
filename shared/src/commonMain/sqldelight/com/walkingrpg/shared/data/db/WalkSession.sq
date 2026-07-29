@@ -26,6 +26,15 @@ WHERE id = :id AND ended_at IS NULL;
 -- ended_at は「そのセッションで最後に取れた測位サンプルの時刻」（1件も無ければ started_at）。
 -- 畳む処理を走らせた時刻（＝次回の起動・開始時刻）を入れると、
 -- 数日後に起動しただけで継続時間が何日にも化けてしまう。
+-- 畳む対象のID。UPDATE の前に同じトランザクションで引く
+-- （畳んだあとでは ended_at IS NULL では引けなくなるため）。
+-- 呼び出し側はこのIDで導出（passage → way_growth）を作り直す。
+selectOpenSessionIds:
+SELECT id
+FROM walk_session
+WHERE ended_at IS NULL
+ORDER BY id;
+
 abandonOpenSessions:
 UPDATE walk_session
 SET ended_at = COALESCE(

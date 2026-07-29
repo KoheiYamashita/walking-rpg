@@ -1,5 +1,7 @@
 package com.walkingrpg.shared.domain.map
 
+import com.walkingrpg.shared.domain.growth.GrowthStage
+
 /**
  * 地図まわりのドメインモデル（architecture.md §2 ドメイン層・純Kotlin）。
  *
@@ -37,13 +39,22 @@ data class MapCamera(
  * way（道路セグメント）1本ぶんの色づけ。
  *
  * design.md §8「実地図＋抽象レイヤー」の抽象レイヤー側。
- * 具体的な色はUI層が [depth] から決める（ドメインは色を知らない）。
+ * 具体的な色はUI層が [stage] から決める（ドメインは色を知らない）。
+ *
+ * 段階を `Int` の「濃さ」に潰さず [GrowthStage] のまま渡すのは、
+ * 潰した瞬間に「5段階しかない」ことがドメイン側で失われ、
+ * UI層の `when` が網羅チェックを受けられなくなるから
+ * （`depth = 7` のような、成長側にありえない値を表現できてしまう）。
+ * 色を決めるのがUI層である、という責務分担はそのまま。
+ *
+ * @param isNewlyGrown 直近の散歩で段階が上がった道。design.md §8「わずかな揺らぎ程度」の
+ *  強調に使う（どう見せるかはUI層が決める）。
  */
 data class WayHighlight(
-    val wayId: String,
+    val wayId: Long,
     val shape: List<GeoPoint>,
-    /** 育ちの段階。0 = 未踏。大きいほど濃く塗る。 */
-    val depth: Int,
+    val stage: GrowthStage,
+    val isNewlyGrown: Boolean = false,
 )
 
 /**
@@ -53,7 +64,10 @@ data class WayHighlight(
  * ドメインが持つのはカメラと抽象レイヤー、それに現在地だけ。
  *
  * @param userLocation 画面を開いた時点の現在地。権限がない・測位できないときは `null`
- *  （このとき [camera] はローカル設定由来の初期位置になる）。追従はしない（issue #10 の領分）。
+ *  （このとき [camera] はローカル設定由来の初期位置になる）。
+ *  記録中の**追従**はこのモデルには入れない：追従するかどうかは「いま記録中か」だけで決まり、
+ *  地図を組み立て直さなくても切り替わる状態なので、UI層（`MapUiState`）が
+ *  `ObserveIsWalkingUseCase` から直接持つ。
  */
 data class MapScene(
     val camera: MapCamera,

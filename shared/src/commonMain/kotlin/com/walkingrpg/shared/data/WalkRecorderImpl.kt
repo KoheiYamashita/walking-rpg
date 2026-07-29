@@ -16,8 +16,12 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -52,6 +56,18 @@ internal class WalkRecorderImpl(
     private val _state = MutableStateFlow(WalkRecordingState())
     override val state: StateFlow<WalkRecordingState> = _state.asStateFlow()
 
+    /**
+     * 畳んだセッションの通知。バッファ付きにして [tryEmit] で出すのは、
+     * **記録を畳む処理を購読側の都合で待たせないため**（`suspend fun emit` だと
+     * 購読側が詰まっているあいだ mutex を握ったままになる）。
+     * 散歩は1回ずつしか終わらないので、バッファが溢れることは実質ない。
+     */
+    private val _finishedSessions = MutableSharedFlow<Long>(
+        extraBufferCapacity = FINISHED_SESSIONS_BUFFER,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+    override val finishedSessions: Flow<Long> = _finishedSessions.asSharedFlow()
+
     /** start/stop の割り込みを直列化する。 */
     private val mutex = Mutex()
     private var collectJob: Job? = null
@@ -60,8 +76,10 @@ internal class WalkRecorderImpl(
         if (_state.value.isRecording) return@withLock
 
         // 前回アプリが落ちて開きっぱなしのセッションがあれば畳んでおく
-        // （終了時刻は最後のサンプルの時刻。決めるのはリポジトリ側）
-        sessionRepository.abandonOpenSessions()
+        // （終了時刻は最後のサンプルの時刻。決めるのはリポジトリ側）。
+        // 畳んだぶんも終了イベントに乗せる：クラッシュで終わった散歩もサンプルは
+        // 残っているので、他の畳み方と同じく導出を作り直さなければならない。
+        sessionRepository.abandonOpenSessions().forEach(_finishedSessions::tryEmit)
 
         val startedAtMs = clock.nowMillis()
         val sessionId = sessionRepository.startSession(startedAtMs)
@@ -127,6 +145,7 @@ internal class WalkRecorderImpl(
         val startedAtMs = _state.value.startedAtMs ?: endedAtMs
         sessionRepository.endSession(sessionId, endedAtMs, SessionEndReason.AUTO_ARRIVAL)
         _state.update { it.stopped(endedAtMs) }
+        _finishedSessions.tryEmit(sessionId)
 
         walkNotifier.notifyHomecoming((endedAtMs - startedAtMs).coerceAtLeast(0L))
     }
@@ -150,6 +169,9 @@ internal class WalkRecorderImpl(
         val endedAtMs = _state.value.lastSample?.timestampMs ?: clock.nowMillis()
         sessionRepository.endSession(sessionId, endedAtMs, SessionEndReason.LOCATION_ERROR)
         _state.update { it.stopped(endedAtMs).errored(message) }
+        // エラー終了でも導出はやる：測位が途中で止まっただけで、
+        // そこまでのサンプルは真実として残っている（歩いたぶんは育つ）。
+        _finishedSessions.tryEmit(sessionId)
     }
 
     override suspend fun stop(): Unit = mutex.withLock {
@@ -162,6 +184,7 @@ internal class WalkRecorderImpl(
         val endedAtMs = clock.nowMillis()
         sessionRepository.endSession(sessionId, endedAtMs, SessionEndReason.MANUAL)
         _state.update { it.stopped(endedAtMs) }
+        _finishedSessions.tryEmit(sessionId)
     }
 
     /**
@@ -172,6 +195,8 @@ internal class WalkRecorderImpl(
     private class HomecomingSignal(val endedAtMs: Long) : Throwable()
 
     private companion object {
+        const val FINISHED_SESSIONS_BUFFER = 8
+
         const val MESSAGE_STREAM_ENDED = "測位が停止しました（権限や位置情報設定を確認してください）"
         const val MESSAGE_UNKNOWN_ERROR = "測位に失敗しました"
     }

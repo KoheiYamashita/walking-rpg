@@ -1,15 +1,20 @@
 package com.walkingrpg.shared.domain.map
 
+import com.walkingrpg.shared.domain.growth.RecentGrowthRepository
+import com.walkingrpg.shared.domain.growth.WayGrowthRepository
+import com.walkingrpg.shared.domain.osm.OsmMasterRepository
 import com.walkingrpg.shared.domain.walk.CurrentLocationRepository
 
 /**
  * 地図画面に出すもの一式を組み立てるUseCase。
  *
- * スパイク（issue #4）では歩行ログがまだ無いので、抽象レイヤーの検証用に
- * カメラ中心から機械的に導出したダミーwayを返す。純関数なので同じ入力からは
- * 必ず同じ出力になる（architecture.md §0「状態 = 歩行ログの累積」の性質を先取り）。
+ * 抽象レイヤー（design.md §8）は `way_growth`（育ちの段階）と `way`（形）の突き合わせ。
+ * 成長の行があるのは1回でも通った道だけ（[com.walkingrpg.shared.domain.growth.WayGrowth]）なので、
+ * 「歩いた道だけが色を持つ」がそのまま出る＝未踏の道を0段階で並べるコードは要らない。
  *
- * 後続issue（#6 map matching）で、ここが `passage` からの導出に置き換わる。
+ * `way_growth` は `passage` から何度でも作り直せる導出キャッシュなので、この画面が
+ * 見ているのは常に「歩行ログの累積」そのもの（architecture.md §0）。読むだけで、
+ * 再計算はしない（再計算の入口は `RecomputeAfterWalkUseCase`）。
  *
  * カメラの中心は**現在地が取れればそこ、取れなければ広域デフォルト**
  * （[MapCamera.WIDE_DEFAULT]）。ユーザー固有の座標をリポジトリに置かない方針なので、
@@ -19,6 +24,9 @@ import com.walkingrpg.shared.domain.walk.CurrentLocationRepository
  */
 class GetMapSceneUseCase(
     private val currentLocationRepository: CurrentLocationRepository,
+    private val wayGrowthRepository: WayGrowthRepository,
+    private val osmMasterRepository: OsmMasterRepository,
+    private val recentGrowthRepository: RecentGrowthRepository,
 ) {
     suspend operator fun invoke(): MapScene {
         val userLocation = currentLocationRepository.currentFix()
@@ -31,38 +39,47 @@ class GetMapSceneUseCase(
 
         return MapScene(
             camera = camera,
-            highlights = demoHighlights(camera.center),
+            highlights = highlights(),
             userLocation = userLocation,
         )
     }
 
     /**
-     * 中心から東西に伸びる3本のダミーway。座標は中心からの相対オフセットのみで、
-     * 実在の場所をコードに書かないための措置。
+     * 育ちのある道だけを、形（マスタの `geometry`）と突き合わせて返す。
+     *
+     * マスタに無いway ID（対象圏を取り直してOSM側から消えた道など）は黙って落とす。
+     * 形が引けないものは描きようがなく、`passage` 側は真実として残っているので、
+     * 次にマスタを取り直せば戻る＝ここで落とすのは表示だけ。
+     *
+     * 段階の低い順に並べるのは、地図SDKが後ろの要素を上に描くから。
+     * 交差点で重なったとき、育っている道の色が下に隠れないようにする。
      */
-    private fun demoHighlights(center: GeoPoint): List<WayHighlight> =
-        List(DEMO_WAY_COUNT) { index ->
-            val latOffset = (index - DEMO_WAY_COUNT / 2) * DEMO_WAY_SPACING_DEG
-            WayHighlight(
-                wayId = "demo-way-$index",
-                shape = List(DEMO_WAY_VERTEX_COUNT) { vertex ->
-                    val progress = vertex.toDouble() / (DEMO_WAY_VERTEX_COUNT - 1) - 0.5
-                    GeoPoint(
-                        latitude = center.latitude + latOffset,
-                        longitude = center.longitude + progress * DEMO_WAY_LENGTH_DEG,
-                    )
-                },
-                depth = index + 1,
-            )
-        }
+    private suspend fun highlights(): List<WayHighlight> {
+        val growths = wayGrowthRepository.growths()
+        if (growths.isEmpty()) return emptyList()
+
+        val shapeByWayId = osmMasterRepository.ways().associate { it.id to it.geometry }
+        val stageRaisedWayIds = recentGrowthRepository.stageRaisedWayIds
+
+        return growths
+            .mapNotNull { growth ->
+                val shape = shapeByWayId[growth.wayId] ?: return@mapNotNull null
+                // 1点しかないwayは線にならない（マスタが壊れているとき）ので捨てる
+                if (shape.size < MIN_SHAPE_POINTS) return@mapNotNull null
+                WayHighlight(
+                    wayId = growth.wayId,
+                    shape = shape,
+                    stage = growth.stage,
+                    isNewlyGrown = growth.wayId in stageRaisedWayIds,
+                )
+            }
+            .sortedBy { it.stage }
+    }
 
     private companion object {
         /** 現在地が取れたときのズーム（散歩の縮尺＝街区が見える程度）。 */
         const val FOCUSED_ZOOM = 15.0
 
-        const val DEMO_WAY_COUNT = 3
-        const val DEMO_WAY_VERTEX_COUNT = 5
-        const val DEMO_WAY_SPACING_DEG = 0.0015
-        const val DEMO_WAY_LENGTH_DEG = 0.006
+        const val MIN_SHAPE_POINTS = 2
     }
 }

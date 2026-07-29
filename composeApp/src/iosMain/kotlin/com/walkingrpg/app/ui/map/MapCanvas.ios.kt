@@ -28,6 +28,7 @@ actual fun MapCanvas(
     camera: MapCamera,
     highlights: List<WayHighlight>,
     userLocation: GeoPoint?,
+    followUserLocation: Boolean,
     modifier: Modifier,
 ) {
     Column(

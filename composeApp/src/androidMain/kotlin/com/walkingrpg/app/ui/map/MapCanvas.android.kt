@@ -48,6 +48,7 @@ private const val STYLE_URL = "https://tiles.openfreemap.org/styles/positron"
 private const val HIGHLIGHT_SOURCE_ID = "walked-ways"
 private const val HIGHLIGHT_LAYER_ID = "walked-ways-line"
 private const val COLOR_PROPERTY = "color"
+private const val WIDTH_PROPERTY = "width"
 
 /**
  * Android版の地図ビュー。MapLibre Native を [AndroidView] で埋め込む。
@@ -61,6 +62,7 @@ actual fun MapCanvas(
     camera: MapCamera,
     highlights: List<WayHighlight>,
     userLocation: GeoPoint?,
+    followUserLocation: Boolean,
     modifier: Modifier,
 ) {
     val context = LocalContext.current
@@ -75,6 +77,7 @@ actual fun MapCanvas(
 
     // スタイル読み込み完了は非同期なので、そのコールバック時点の最新値を読めるようにしておく。
     val showUserLocation by rememberUpdatedState(userLocation != null)
+    val followUser by rememberUpdatedState(followUserLocation)
 
     MapViewLifecycle(mapView)
 
@@ -92,17 +95,19 @@ actual fun MapCanvas(
                         // 抽象レイヤーはOpenFreeMapのスタイルの一番上に重ねる。
                         style.addSource(GeoJsonSource(HIGHLIGHT_SOURCE_ID, features))
                         style.addLayer(highlightLayer())
-                        if (showUserLocation) map.enableUserLocationPuck(context, style)
+                        if (showUserLocation) map.enableUserLocationPuck(context, style, followUser)
                     }
                 }
             }
         },
         update = { view ->
-            // 歩行ログが増えれば描き直す（スパイクでは初回のみ実質動く）。
+            // 散歩から帰って成長が作り直されると highlights が差し替わるので描き直す。
+            // カメラはここでは動かさない：記録中は追従（CameraMode.TRACKING）が持っていくし、
+            // 記録中でなければ地図を触っている最中に勝手に戻される方が邪魔になる。
             view.getMapAsync { map ->
                 val style = map.style ?: return@getMapAsync
                 style.getSourceAs<GeoJsonSource>(HIGHLIGHT_SOURCE_ID)?.setGeoJson(features)
-                if (showUserLocation) map.enableUserLocationPuck(context, style)
+                if (showUserLocation) map.enableUserLocationPuck(context, style, followUser)
             }
         },
     )
@@ -115,11 +120,19 @@ actual fun MapCanvas(
  * ＝ 上位（`LocationPermissionController` 由来の判定）でGRANTEDを確認済みのときだけ呼ぶ。
  * 判定をこことプラットフォーム層の二箇所に持たないための取り決め。
  *
- * 追従はしない（[CameraMode.NONE]）。開いた時点の現在地に寄せるのはカメラ側の仕事で、
- * 追従モードは issue #10 の領分（design.md §3）。
+ * 記録中だけ追従する（[CameraMode.TRACKING]：現在地を画面中央に保つ。向きは回さない）。
+ * 記録していないときは [CameraMode.NONE] で、開いた時点の現在地に寄せるのはカメラ側の仕事。
+ *
+ * 「手で地図を動かしたら追従を一時解除して、しばらくしたら戻す」のような制御は入れない
+ * （design.md §8「凝らない」）。散歩中に地図を触るのは現在地から目を離したいときなので、
+ * MapLibreが自前で持っている「ジェスチャ中は追従を外す」既定の挙動で足りる。
  */
 @SuppressLint("MissingPermission")
-private fun MapLibreMap.enableUserLocationPuck(context: Context, style: Style) {
+private fun MapLibreMap.enableUserLocationPuck(
+    context: Context,
+    style: Style,
+    followUserLocation: Boolean,
+) {
     val component = locationComponent
     if (!component.isLocationComponentActivated) {
         component.activateLocationComponent(
@@ -129,19 +142,23 @@ private fun MapLibreMap.enableUserLocationPuck(context: Context, style: Style) {
         )
     }
     component.isLocationComponentEnabled = true
-    component.cameraMode = CameraMode.NONE
     component.renderMode = RenderMode.NORMAL
+
+    val mode = if (followUserLocation) CameraMode.TRACKING else CameraMode.NONE
+    // 同じモードを入れ直すとカメラのアニメーションが再開してしまうので、変わるときだけ書く
+    // （update ブロックは highlights の差し替えでも呼ばれる）。
+    if (component.cameraMode != mode) component.cameraMode = mode
 }
 
 /**
  * way単位の色づけレイヤー。
- * 色はfeatureの `color` プロパティから引く（data-driven styling）ので、
- * 1レイヤーのままway1本ごとに違う色を塗れる。
+ * 色も太さもfeatureのプロパティから引く（data-driven styling）ので、
+ * 1レイヤーのままway1本ごとに違う見た目にできる。
  */
 private fun highlightLayer(): LineLayer =
     LineLayer(HIGHLIGHT_LAYER_ID, HIGHLIGHT_SOURCE_ID).withProperties(
         PropertyFactory.lineColor(Expression.get(COLOR_PROPERTY)),
-        PropertyFactory.lineWidth(6f),
+        PropertyFactory.lineWidth(Expression.get(WIDTH_PROPERTY)),
         PropertyFactory.lineOpacity(0.85f),
         PropertyFactory.lineCap("round"),
         PropertyFactory.lineJoin("round"),
@@ -154,9 +171,13 @@ private fun List<WayHighlight>.toFeatureCollection(): FeatureCollection =
                 highlight.shape.map { Point.fromLngLat(it.longitude, it.latitude) },
             )
             val properties = JsonObject().apply {
-                addProperty(COLOR_PROPERTY, depthColorHex(highlight.depth))
+                addProperty(COLOR_PROPERTY, stageColorHex(highlight.stage))
+                addProperty(
+                    WIDTH_PROPERTY,
+                    if (highlight.isNewlyGrown) NEWLY_GROWN_LINE_WIDTH else WAY_LINE_WIDTH,
+                )
             }
-            Feature.fromGeometry(line, properties, highlight.wayId)
+            Feature.fromGeometry(line, properties, highlight.wayId.toString())
         },
     )
 
