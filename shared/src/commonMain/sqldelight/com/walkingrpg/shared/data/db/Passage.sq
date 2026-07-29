@@ -33,6 +33,16 @@ FROM passage
 WHERE session_id = ?
 ORDER BY ts, way_id;
 
+-- 導出（way_growth）の材料。セッションを跨いだ全通過を道ごとに数える。
+-- 「1回の通過ごとに育つ」（design.md §4.1）なので、数えるのは行数そのもの。
+-- 集計をSQLに置くのは、全通過をメモリに載せずに済ませるため
+-- （結果はドメイン側の WayGrowthCalculator が同じ形で受ける）。
+selectPassCountsByWay:
+SELECT way_id, COUNT(*) AS pass_count
+FROM passage
+GROUP BY way_id
+ORDER BY way_id;
+
 countPassagesBySession:
 SELECT COUNT(*)
 FROM passage

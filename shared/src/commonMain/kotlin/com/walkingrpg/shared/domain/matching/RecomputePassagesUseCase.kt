@@ -10,7 +10,8 @@ import com.walkingrpg.shared.domain.walk.WalkSessionRepository
  * これを流し直せば結果が置き換わる。何度呼んでも同じ状態になる（[MapMatcher] が
  * 純関数で、保存が全削除→挿入なので）。
  *
- * 呼び出し側（散歩終了時・設定変更後の再計算）は #9 / #10 で結線する。
+ * 散歩終了時は、この直後に成長の再計算が続く（`RecomputeAfterWalkUseCase`／#9）。
+ * UI（画面からの呼び出し・帰宅後サマリ）への結線は #10 で行う。
  */
 class RecomputePassagesUseCase(
     private val sessionRepository: WalkSessionRepository,

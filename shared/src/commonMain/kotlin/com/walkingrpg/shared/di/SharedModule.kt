@@ -9,6 +9,7 @@ import com.walkingrpg.shared.data.WalkSessionExporterImpl
 import com.walkingrpg.shared.data.SetupRepositoryImpl
 import com.walkingrpg.shared.data.WalkSessionRepositoryImpl
 import com.walkingrpg.shared.data.createDatabase
+import com.walkingrpg.shared.data.growth.WayGrowthRepositoryImpl
 import com.walkingrpg.shared.data.llm.HttpLlmConnectionTester
 import com.walkingrpg.shared.data.matching.PassageRepositoryImpl
 import com.walkingrpg.shared.data.llm.llmHttpClient
@@ -19,6 +20,10 @@ import com.walkingrpg.shared.data.osm.osmHttpClient
 import com.walkingrpg.shared.domain.Clock
 import com.walkingrpg.shared.domain.GetPlatformNameUseCase
 import com.walkingrpg.shared.domain.SystemInfoRepository
+import com.walkingrpg.shared.domain.growth.GrowthConfig
+import com.walkingrpg.shared.domain.growth.RecomputeAfterWalkUseCase
+import com.walkingrpg.shared.domain.growth.RecomputeWayGrowthUseCase
+import com.walkingrpg.shared.domain.growth.WayGrowthRepository
 import com.walkingrpg.shared.domain.map.GetMapSceneUseCase
 import com.walkingrpg.shared.domain.matching.MapMatchingConfig
 import com.walkingrpg.shared.domain.matching.PassageRepository
@@ -137,6 +142,15 @@ val sharedModule = module {
     single { MapMatchingConfig.DEFAULT }
     single<PassageRepository> { PassageRepositoryImpl(get()) }
     factoryOf(::RecomputePassagesUseCase)
+
+    // --- 道の成長（issue #9） ---
+    // 段階の閾値（GrowthConfig）もここで差し替えられる。way_growth は捨てて
+    // 作り直せる導出キャッシュなので、差し替えたら RecomputeWayGrowthUseCase を流せばよい。
+    single { GrowthConfig.DEFAULT }
+    single<WayGrowthRepository> { WayGrowthRepositoryImpl(get()) }
+    factoryOf(::RecomputeWayGrowthUseCase)
+    // 散歩終了時（帰宅後）の入口。passage → way_growth の順で作り直す。UI結線は #10
+    factoryOf(::RecomputeAfterWalkUseCase)
 
     // --- 初回セットアップ（issue #6） ---
     // 秘密（APIキー・自宅座標）と非秘密（URL・モデル名・完了フラグ）の振り分けは

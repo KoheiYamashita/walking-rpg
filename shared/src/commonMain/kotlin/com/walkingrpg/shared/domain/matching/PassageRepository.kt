@@ -19,4 +19,12 @@ interface PassageRepository {
 
     /** 指定セッションの通過を時刻順に返す。 */
     suspend fun passages(sessionId: Long): List<Passage>
+
+    /**
+     * 全セッションの通過を道ごとに数える（way ID → 通過回数）。回数が0の道は現れない。
+     *
+     * 成長（`way_growth`）の唯一の材料。全通過を返さず数だけ返すのは、
+     * 導出の作り直しが年単位の通過を舐めても軽いままであるようにするため。
+     */
+    suspend fun passCountsByWay(): Map<Long, Int>
 }
