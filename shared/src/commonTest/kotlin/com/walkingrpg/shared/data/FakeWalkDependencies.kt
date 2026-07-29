@@ -1,6 +1,10 @@
 package com.walkingrpg.shared.data
 
 import com.walkingrpg.shared.domain.Clock
+import com.walkingrpg.shared.domain.setup.HomeAnchor
+import com.walkingrpg.shared.domain.setup.LlmConnectionSettings
+import com.walkingrpg.shared.domain.setup.SetupRepository
+import com.walkingrpg.shared.domain.setup.WeatherSettings
 import com.walkingrpg.shared.domain.walk.LocationFix
 import com.walkingrpg.shared.domain.walk.LocationSample
 import com.walkingrpg.shared.domain.walk.SessionEndReason
@@ -9,6 +13,7 @@ import com.walkingrpg.shared.domain.walk.WalkSessionRepository
 import com.walkingrpg.shared.domain.walk.WalkSessionSummary
 import com.walkingrpg.shared.platform.LocationProvider
 import com.walkingrpg.shared.platform.SessionKeeper
+import com.walkingrpg.shared.platform.WalkNotifier
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -34,6 +39,41 @@ internal class FakeSessionKeeper : SessionKeeper {
     override fun stop() {
         stopped++
     }
+}
+
+internal class FakeWalkNotifier : WalkNotifier {
+    /** 出した「おかえり」通知の長さ（ms）。件数と中身の両方を見たいので列で持つ。 */
+    val homecomings = mutableListOf<Long>()
+
+    override fun notifyHomecoming(durationMs: Long) {
+        homecomings += durationMs
+    }
+}
+
+/**
+ * 自宅の登録だけを持つ [SetupRepository]。記録の結線で見たいのは
+ * 「自宅が読めるか／未登録か」だけなので、他は使わない前提で落とす。
+ */
+internal class FakeSetupRepository(
+    private val homeAnchor: HomeAnchor? = null,
+    /** セキュアストレージが読めない状況（端末の鍵が壊れた等）の再現。 */
+    private val homeAnchorFailure: Throwable? = null,
+) : SetupRepository {
+
+    override suspend fun loadHomeAnchor(): HomeAnchor? {
+        homeAnchorFailure?.let { throw it }
+        return homeAnchor
+    }
+
+    override suspend fun loadLlmConnection(): LlmConnectionSettings? = notUsed()
+    override suspend fun saveLlmConnection(settings: LlmConnectionSettings) = notUsed()
+    override suspend fun loadWeatherSettings(): WeatherSettings = notUsed()
+    override suspend fun saveWeatherSettings(settings: WeatherSettings) = notUsed()
+    override suspend fun saveHomeAnchor(anchor: HomeAnchor) = notUsed()
+    override suspend fun isSetupCompleted(): Boolean = notUsed()
+    override suspend fun markSetupCompleted() = notUsed()
+
+    private fun notUsed(): Nothing = error("記録の結線では使わない")
 }
 
 internal class FakeLocationProvider(

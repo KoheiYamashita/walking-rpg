@@ -1,5 +1,7 @@
 package com.walkingrpg.shared.data
 
+import com.walkingrpg.shared.domain.setup.DEFAULT_HOME_BLUR_RADIUS_METERS
+import com.walkingrpg.shared.domain.setup.HomeAnchor
 import com.walkingrpg.shared.domain.walk.LocationFix
 import com.walkingrpg.shared.domain.walk.LocationUnavailableException
 import com.walkingrpg.shared.domain.walk.SessionEndReason
@@ -18,10 +20,11 @@ import kotlin.test.assertTrue
 @OptIn(ExperimentalCoroutinesApi::class)
 class WalkRecorderImplTest {
 
-    private fun fix(ts: Long, accuracy: Double = 5.0) = LocationFix(
+    private fun fix(ts: Long, accuracy: Double = 5.0, metersFromHome: Double = 0.0) = LocationFix(
         timestampMs = ts,
-        latitude = 0.0,
-        longitude = 0.0,
+        // 自宅から真北に離れた点（自宅未登録のテストでは座標は使われない）
+        latitude = HOME_LATITUDE + metersFromHome / METERS_PER_DEGREE_LATITUDE,
+        longitude = HOME_LONGITUDE,
         accuracyMeters = accuracy,
     )
 
@@ -30,10 +33,15 @@ class WalkRecorderImplTest {
         repository: FakeWalkSessionRepository = FakeWalkSessionRepository(),
         keeper: FakeSessionKeeper = FakeSessionKeeper(),
         clock: MutableClock = MutableClock(1_000L),
+        // 既定は自宅未登録＝自動終了なし。ここを見ないテストが自動終了に巻き込まれない
+        setup: FakeSetupRepository = FakeSetupRepository(),
+        notifier: FakeWalkNotifier = FakeWalkNotifier(),
     ) = WalkRecorderImpl(
         locationProvider = provider,
         sessionRepository = repository,
         sessionKeeper = keeper,
+        setupRepository = setup,
+        walkNotifier = notifier,
         clock = clock,
         scope = backgroundScope,
     )
@@ -265,5 +273,155 @@ class WalkRecorderImplTest {
         recorder.start()
 
         assertNull(recorder.state.value.error)
+    }
+
+    // --- 自動終了（design.md §3「自宅付近＋移動停止を検知して『おかえり』を出す」） ---
+
+    /** 出発 → 遠出 → 帰宅して玄関で2分静止、という並び。 */
+    private fun homecomingFixes(): List<LocationFix> = listOf(
+        fix(ts = 0, metersFromHome = 0.0),
+        fix(ts = 60_000, metersFromHome = 400.0),
+        fix(ts = 1_200_000, metersFromHome = 5.0),
+        fix(ts = 1_320_000, metersFromHome = 5.0),
+    )
+
+    @Test
+    fun 自宅に着いて止まったら自動終了して通知を出す() = runTest {
+        val provider = FakeLocationProvider()
+        val repository = FakeWalkSessionRepository()
+        val keeper = FakeSessionKeeper()
+        val notifier = FakeWalkNotifier()
+        val recorder = recorder(
+            provider = provider,
+            repository = repository,
+            keeper = keeper,
+            clock = MutableClock(0L),
+            setup = FakeSetupRepository(homeAnchor = HOME),
+            notifier = notifier,
+        )
+
+        recorder.start()
+        runCurrent()
+        homecomingFixes().forEach { provider.fixes.emit(it) }
+        runCurrent()
+
+        val session = repository.sessions.single()
+        assertEquals(SessionEndReason.AUTO_ARRIVAL, session.endReason)
+        // 終了時刻は判定が成立したサンプルの時刻（端末時計ではない）
+        assertEquals(1_320_000L, session.endedAtMs)
+        assertFalse(recorder.state.value.isRecording)
+        assertNull(recorder.state.value.error)
+        // 保険（Foreground Service）も畳む
+        assertEquals(1, keeper.stopped)
+        // 「おかえり」は1回だけ、セッションの長さつきで
+        assertEquals(listOf(1_320_000L), notifier.homecomings)
+    }
+
+    @Test
+    fun 自動終了したあとのサンプルは記録されない() = runTest {
+        val provider = FakeLocationProvider()
+        val repository = FakeWalkSessionRepository()
+        val recorder = recorder(
+            provider = provider,
+            repository = repository,
+            clock = MutableClock(0L),
+            setup = FakeSetupRepository(homeAnchor = HOME),
+        )
+
+        recorder.start()
+        runCurrent()
+        homecomingFixes().forEach { provider.fixes.emit(it) }
+        runCurrent()
+        provider.fixes.emit(fix(ts = 1_400_000, metersFromHome = 5.0))
+        runCurrent()
+
+        val session = repository.sessions.single()
+        assertEquals(4, repository.samplesOf(session.id).size)
+    }
+
+    @Test
+    fun 自宅が未登録なら自動終了しない() = runTest {
+        val provider = FakeLocationProvider()
+        val repository = FakeWalkSessionRepository()
+        val notifier = FakeWalkNotifier()
+        val recorder = recorder(
+            provider = provider,
+            repository = repository,
+            clock = MutableClock(0L),
+            setup = FakeSetupRepository(homeAnchor = null),
+            notifier = notifier,
+        )
+
+        recorder.start()
+        runCurrent()
+        homecomingFixes().forEach { provider.fixes.emit(it) }
+        runCurrent()
+
+        assertTrue(recorder.state.value.isRecording)
+        assertNull(repository.sessions.single().endReason)
+        assertTrue(notifier.homecomings.isEmpty())
+    }
+
+    @Test
+    fun 自宅が読めなくても記録は始まる() = runTest {
+        val provider = FakeLocationProvider()
+        val repository = FakeWalkSessionRepository()
+        val recorder = recorder(
+            provider = provider,
+            repository = repository,
+            clock = MutableClock(0L),
+            setup = FakeSetupRepository(homeAnchorFailure = IllegalStateException("鍵が壊れています")),
+        )
+
+        recorder.start()
+        runCurrent()
+        homecomingFixes().forEach { provider.fixes.emit(it) }
+        runCurrent()
+
+        // 自動終了は効かないが、記録そのものは続く（手動停止で畳める）
+        assertTrue(recorder.state.value.isRecording)
+        assertEquals(4, repository.samplesOf(repository.sessions.single().id).size)
+    }
+
+    @Test
+    fun 自動終了のあとに手動停止しても二重に畳まない() = runTest {
+        val provider = FakeLocationProvider()
+        val repository = FakeWalkSessionRepository()
+        val keeper = FakeSessionKeeper()
+        val notifier = FakeWalkNotifier()
+        val recorder = recorder(
+            provider = provider,
+            repository = repository,
+            keeper = keeper,
+            clock = MutableClock(0L),
+            setup = FakeSetupRepository(homeAnchor = HOME),
+            notifier = notifier,
+        )
+
+        recorder.start()
+        runCurrent()
+        homecomingFixes().forEach { provider.fixes.emit(it) }
+        runCurrent()
+        recorder.stop()
+
+        val session = repository.sessions.single()
+        assertEquals(SessionEndReason.AUTO_ARRIVAL, session.endReason)
+        assertEquals(1_320_000L, session.endedAtMs)
+        assertEquals(1, keeper.stopped)
+        assertEquals(1, notifier.homecomings.size)
+    }
+
+    private companion object {
+        const val HOME_LATITUDE = 35.0
+        const val HOME_LONGITUDE = 139.0
+
+        /** 子午線上の1度の長さ（m）。真北にずらすので経度のスケールを考えなくてよい。 */
+        const val METERS_PER_DEGREE_LATITUDE = 111_194.9
+
+        val HOME = HomeAnchor(
+            latitude = HOME_LATITUDE,
+            longitude = HOME_LONGITUDE,
+            blurRadiusMeters = DEFAULT_HOME_BLUR_RADIUS_METERS,
+        )
     }
 }

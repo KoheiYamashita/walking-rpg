@@ -10,6 +10,7 @@ android-targetSdk = "36"
 # --- ライブラリ ---
 androidx-activityCompose = "1.13.0"
 androidx-core = "1.15.0"
+healthConnect = "1.1.0"
 playServicesLocation = "21.3.0"
 coroutines = "1.11.0"
 kotlinxDatetime = "0.6.2"
@@ -73,6 +74,9 @@ androidx-activity = { module = "androidx.activity:activity", version.ref = "andr
 
 # 位置情報（Android）
 play-services-location = { module = "com.google.android.gms:play-services-location", version.ref = "playServicesLocation" }
+
+# 歩数計（Android）。押し忘れ救済（issue #7）で1日ぶんの歩数・距離を読む
+androidx-health-connect = { module = "androidx.health.connect:connect-client", version.ref = "healthConnect" }
 
 [plugins]
 androidApplication = { id = "com.android.application", version.ref = "agp" }

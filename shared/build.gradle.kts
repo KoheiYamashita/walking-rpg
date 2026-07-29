@@ -33,6 +33,8 @@ kotlin {
             // ここに置く依存は data / platform 層でのみ使うこと。
             implementation(libs.kotlinx.coroutines.core)
             implementation(libs.kotlinx.serialization.json)
+            // 暦日の計算（SystemCalendarDays）。domain は CalendarDays 越しにしか触らない
+            implementation(libs.kotlinx.datetime)
 
             api(libs.koin.core)
 
@@ -62,6 +64,7 @@ kotlin {
             implementation(libs.androidx.core.ktx)
             api(libs.androidx.activity)
             implementation(libs.play.services.location)
+            implementation(libs.androidx.health.connect)
         }
         iosMain.dependencies {
             implementation(libs.ktor.client.darwin)
