@@ -7,8 +7,10 @@ import com.walkingrpg.shared.domain.osm.GeoDistance
  * 自動終了の判定（design.md §3「自宅付近＋移動停止を検知して『おかえり』を出す」）。
  *
  * [WalkRecordingState] と同じく**純粋な状態機械**：現在時刻も乱数も測位APIも使わず、
- * サンプルを1件ずつ畳んでいくだけ。時刻はサンプルが持っているものだけを見る
- * （端末時計を別に読むと、測位の遅延ぶんだけ「止まっている時間」が水増しされる）。
+ * サンプルを1件ずつ畳んでいくだけ。**止まっている時間**の判定はサンプルが持つ時刻
+ * どうしの差分だけで行う（端末時計を別に読むと、測位の遅延ぶんだけ水増しされる）。
+ * 例外は [HomeArrivalConfig.minSessionDurationMs] の基準となる [sessionStartedAtMs] で、
+ * これは呼び出し側の時計由来。保険の粗い判定なので秒単位の時計ずれは影響しない。
  *
  * ## 判定の骨格
  *
@@ -44,6 +46,11 @@ data class HomeArrivalDetector(
     /** 自動終了の条件が揃った。以降は何を渡しても変わらない。 */
     val isArrived: Boolean = false,
 ) {
+
+    /** 自宅座標は伏せる（HomeAnchor と同じ規約。秘密を持つ data class は既定 toString を使わない）。 */
+    override fun toString(): String =
+        "HomeArrivalDetector(home=${if (home == null) "null" else "***"}, " +
+            "hasLeftHome=$hasLeftHome, stillSince=$stillSince, isArrived=$isArrived)"
 
     /**
      * サンプルを1件畳む。判定に使えないサンプル（精度が悪い）は黙って無視する。

@@ -131,6 +131,14 @@ class HomeArrivalDetectorTest {
         assertTrue(arrived.sampleRecorded(sampleAt(ts = 1_400_000, metersFromHome = 900.0)).isArrived)
     }
 
+    @Test
+    fun toStringに自宅座標は出ない() {
+        // 秘密を持つ data class は既定 toString を使わない（SetupModelsTest と同じ約束）
+        val text = HomeArrivalDetector(home = HOME, sessionStartedAtMs = 0L).toString()
+        assertFalse(text.contains(HOME.latitude.toString()))
+        assertFalse(text.contains(HOME.longitude.toString()))
+    }
+
     private companion object {
         val HOME = GeoPoint(latitude = 35.0, longitude = 139.0)
 
