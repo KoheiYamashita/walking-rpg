@@ -10,9 +10,21 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- 歩数計（design.md §3「開始を押し忘れた日」）。許可されていなければ黙って
+         取り込まない（HealthConnectDailyStepsSource）ので、無くても他の機能は動く。
+         許可を求める導線は #16 / #20 で作る -->
+    <uses-permission android:name="android.permission.health.READ_STEPS" />
+    <uses-permission android:name="android.permission.health.READ_DISTANCE" />
+
     <uses-feature
         android:name="android.hardware.location.gps"
         android:required="false" />
+
+    <!-- Android 13以前の Health Connect は別アプリ。入っているかを問い合わせるのに要る
+         （Android 14以降はOS側にあるので、この宣言は無視される） -->
+    <queries>
+        <package android:name="com.google.android.apps.healthdata" />
+    </queries>
 
     <application>
 

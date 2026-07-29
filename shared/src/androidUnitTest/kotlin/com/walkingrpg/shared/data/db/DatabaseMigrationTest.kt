@@ -7,10 +7,13 @@ import com.walkingrpg.shared.data.WalkSessionRepositoryImpl
 import com.walkingrpg.shared.data.growth.WayGrowthRepositoryImpl
 import com.walkingrpg.shared.data.matching.PassageRepositoryImpl
 import com.walkingrpg.shared.data.osm.OsmMasterRepositoryImpl
+import com.walkingrpg.shared.data.steps.StepImportRepositoryImpl
 import com.walkingrpg.shared.domain.growth.GrowthStage
 import com.walkingrpg.shared.domain.growth.WayGrowth
 import com.walkingrpg.shared.domain.matching.Passage
 import com.walkingrpg.shared.domain.matching.SyntheticWalk
+import com.walkingrpg.shared.domain.steps.CalendarDay
+import com.walkingrpg.shared.domain.steps.StepImport
 import kotlinx.coroutines.test.runTest
 import java.io.File
 import kotlin.test.Test
@@ -94,9 +97,9 @@ class DatabaseMigrationTest {
 
         assertEquals(WalkingRpgDatabase.Schema.version, driver.userVersion())
         assertEquals(
-            listOf("location_sample", "passage", "poi", "walk_session", "way", "way_growth"),
+            listOf("location_sample", "passage", "poi", "step_import", "walk_session", "way", "way_growth"),
             driver.tableNames(),
-            "way / poi / passage / way_growth が .sqm で足される",
+            "way / poi / passage / way_growth（1.sqm）と step_import（2.sqm）が足される",
         )
     }
 
@@ -148,6 +151,12 @@ class DatabaseMigrationTest {
 
         assertEquals(listOf(way.id), passages.passages(sessionId).map { it.wayId })
         assertEquals(listOf(way.id), growths.growths().map { it.wayId })
+
+        // 押し忘れ救済（2.sqm で足した step_import）。更新しただけの端末でも書き込める
+        val day = CalendarDay("2026-03-01")
+        val stepImports = StepImportRepositoryImpl(database)
+        stepImports.upsert(StepImport(day = day, steps = 8_200, distanceEstimateMeters = 6_100.0))
+        assertEquals(8_200, stepImports.stepImport(day)?.steps)
     }
 
     @Test
@@ -166,7 +175,7 @@ class DatabaseMigrationTest {
         driver.upgradeToCurrentSchema()
 
         assertEquals(
-            listOf("location_sample", "passage", "poi", "walk_session", "way", "way_growth"),
+            listOf("location_sample", "passage", "poi", "step_import", "walk_session", "way", "way_growth"),
             driver.tableNames(),
         )
     }

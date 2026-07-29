@@ -17,6 +17,8 @@ import com.walkingrpg.shared.data.osm.OsmMasterRepositoryImpl
 import com.walkingrpg.shared.data.osm.OverpassConfig
 import com.walkingrpg.shared.data.osm.OverpassOsmAreaSource
 import com.walkingrpg.shared.data.osm.osmHttpClient
+import com.walkingrpg.shared.data.steps.StepImportRepositoryImpl
+import com.walkingrpg.shared.data.steps.SystemCalendarDays
 import com.walkingrpg.shared.domain.Clock
 import com.walkingrpg.shared.domain.GetPlatformNameUseCase
 import com.walkingrpg.shared.domain.SystemInfoRepository
@@ -41,8 +43,12 @@ import com.walkingrpg.shared.domain.setup.SaveWeatherSettingsUseCase
 import com.walkingrpg.shared.domain.setup.SetupRepository
 import com.walkingrpg.shared.domain.setup.TestLlmConnectionUseCase
 import com.walkingrpg.shared.domain.setup.UpdateHomeBlurRadiusUseCase
+import com.walkingrpg.shared.domain.steps.CalendarDays
+import com.walkingrpg.shared.domain.steps.ImportDailyStepsUseCase
+import com.walkingrpg.shared.domain.steps.StepImportRepository
 import com.walkingrpg.shared.domain.walk.CurrentLocationRepository
 import com.walkingrpg.shared.domain.walk.ExportWalkSessionUseCase
+import com.walkingrpg.shared.domain.walk.HomeArrivalConfig
 import com.walkingrpg.shared.domain.walk.LocationPermissionRepository
 import com.walkingrpg.shared.domain.walk.ObserveIsWalkingUseCase
 import com.walkingrpg.shared.domain.walk.ObserveLocationPermissionUseCase
@@ -103,13 +109,18 @@ val sharedModule = module {
     single<WalkSessionRepository> { WalkSessionRepositoryImpl(get()) }
     single<LocationPermissionRepository> { LocationPermissionRepositoryImpl(get()) }
     single<WalkSessionExporter> { WalkSessionExporterImpl(get(), get()) }
+    // 自動終了の閾値（HomeArrivalConfig）はここで差し替えられる。UIからは触らせない。
+    single { HomeArrivalConfig.DEFAULT }
     single<WalkRecorder> {
         WalkRecorderImpl(
             locationProvider = get(),
             sessionRepository = get(),
             sessionKeeper = get(),
+            setupRepository = get(),
+            walkNotifier = get(),
             clock = get(),
             scope = get(APP_SCOPE),
+            homeArrivalConfig = get(),
         )
     }
 
@@ -151,6 +162,13 @@ val sharedModule = module {
     factoryOf(::RecomputeWayGrowthUseCase)
     // 散歩終了時（帰宅後）の入口。passage → way_growth の順で作り直す。UI結線は #10
     factoryOf(::RecomputeAfterWalkUseCase)
+
+    // --- 押し忘れ救済（issue #7） ---
+    // 歩数計（DailyStepsSource）の実装はプラットフォーム側（platformModule）。
+    // 呼び出しタイミング（アプリ起動時）の結線は #16 で行う。
+    single<CalendarDays> { SystemCalendarDays(get()) }
+    single<StepImportRepository> { StepImportRepositoryImpl(get()) }
+    factoryOf(::ImportDailyStepsUseCase)
 
     // --- 初回セットアップ（issue #6） ---
     // 秘密（APIキー・自宅座標）と非秘密（URL・モデル名・完了フラグ）の振り分けは

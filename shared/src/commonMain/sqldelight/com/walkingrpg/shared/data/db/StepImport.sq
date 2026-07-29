@@ -1,0 +1,37 @@
+-- 押し忘れ救済（architecture.md §4 / design.md §3）。
+-- 「開始を押し忘れた日」に歩数計APIから拾った1日ぶんの歩数・距離。
+--
+-- 真実の源（walk_session / location_sample）とは別系統の事実：
+-- 位置が無いので街は育たない（passage は作れない）が、
+-- 「歩いたのに無かったことになる」も避ける。翌日のパートナーの一言（#16）の材料。
+--
+-- 主キーが日付なのは、この表が「1日1行の観測値」だから。
+-- 同じ日を何度取り込んでも1行に収束する（INSERT OR REPLACE）＝取り込みは冪等で、
+-- 起動のたびに走らせても行が増えない。
+--
+-- 日付は端末ローカル日付の 'YYYY-MM-DD'（epoch millis ではない）。
+-- 歩数計が返すのは「その人にとっての1日」の集計なので、
+-- タイムゾーンを剥がした暦日で持たないと、日付をまたぐ境界がずれる。
+
+CREATE TABLE step_import (
+    date              TEXT NOT NULL PRIMARY KEY,  -- 端末ローカル日付 'YYYY-MM-DD'
+    steps             INTEGER NOT NULL,           -- その日の歩数
+    distance_estimate REAL                        -- 歩数計が返した距離（メートル）。取れなければ NULL
+);
+
+-- 取り込みは1日1行の置き換え。歩数計側の値が後から確定する（同期が遅れて増える）ので、
+-- 「先に入れた値を守る」のではなく最後に取れた値で上書きする。
+upsertStepImport:
+INSERT OR REPLACE INTO step_import(date, steps, distance_estimate)
+VALUES (?, ?, ?);
+
+-- 翌日のパートナーの一言（#16）はこれ1本で「昨日の歩数」を引く。
+selectStepImport:
+SELECT date, steps, distance_estimate
+FROM step_import
+WHERE date = ?;
+
+selectAllStepImports:
+SELECT date, steps, distance_estimate
+FROM step_import
+ORDER BY date;

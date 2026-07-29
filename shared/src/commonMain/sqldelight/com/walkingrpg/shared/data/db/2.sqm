@@ -1,0 +1,15 @@
+-- v2 → v3：押し忘れ救済の step_import を足す（issue #7）。
+--
+-- v2 の端末は 1.sqm を流し終えた状態（walk_session / location_sample /
+-- way / poi / passage / way_growth）なので、ここから先はバージョンで
+-- 中身が確定する。1.sqm のような IF NOT EXISTS は書かない
+-- （あれはスパイク期の後始末。付けると「作られなかった」事故が黙って通る）。
+--
+-- 中身は StepImport.sq の CREATE 文と1文字単位で揃えること。ズレると
+-- verifyMigrations（shared/build.gradle.kts）がビルドで落とす。
+
+CREATE TABLE step_import (
+    date              TEXT NOT NULL PRIMARY KEY,  -- 端末ローカル日付 'YYYY-MM-DD'
+    steps             INTEGER NOT NULL,           -- その日の歩数
+    distance_estimate REAL                        -- 歩数計が返した距離（メートル）。取れなければ NULL
+);
