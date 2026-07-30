@@ -1,5 +1,7 @@
 package com.walkingrpg.shared.domain.review
 
+import com.walkingrpg.shared.domain.matching.MapMatchingConfig
+
 /**
  * 「実際に歩いた距離」の閾値。**調整する数字は全部ここに集める**（`MapMatchingConfig` と同じ流儀）。
  *
@@ -34,10 +36,32 @@ data class WalkDistanceConfig(
      * ゆるいカーブが弦で近似されて距離が目減りする（10mだと曲がりくねった遊歩道で効く）。
      */
     val anchorMoveMeters: Double = 5.0,
+
+    /**
+     * これを超える速度が続く区間は乗り物とみなし、距離に積まない。
+     *
+     * 値を書かずに [MapMatchingConfig] から**借りている**のが肝。判定そのものも
+     * `VehicleRunFilter`（map matching と共有の純関数）に任せていて、
+     * ここはその入口でしかない。数字を写すと、片方だけ調整したときに
+     * 「道は塗られていないのに距離だけ伸びた散歩」が生まれる
+     * （散歩の停止を押し忘れてバスに乗った日がまさにその形）。
+     */
+    val maxWalkingSpeedMps: Double = MapMatchingConfig.DEFAULT.maxWalkingSpeedMps,
+
+    /**
+     * 速度超過がこの時間続いたら乗り物として距離から除外する。
+     *
+     * [maxWalkingSpeedMps] と同じ理由で [MapMatchingConfig] から借りる。
+     * 「一定時間続いたら」なのは、1区間だけの超過がGPSの飛び（誤測位）の形だから：
+     * 横断歩道で一瞬飛んだだけで前後の徒歩ぶんまで削ってしまうと、距離が過小になる。
+     */
+    val vehicleMinDurationMs: Long = MapMatchingConfig.DEFAULT.vehicleMinDurationMs,
 ) {
     init {
         require(maxAccuracyMeters > 0) { "maxAccuracyMeters は正の値" }
         require(anchorMoveMeters > 0) { "anchorMoveMeters は正の値" }
+        require(maxWalkingSpeedMps > 0) { "maxWalkingSpeedMps は正の値" }
+        require(vehicleMinDurationMs >= 0) { "vehicleMinDurationMs は0以上" }
     }
 
     companion object {

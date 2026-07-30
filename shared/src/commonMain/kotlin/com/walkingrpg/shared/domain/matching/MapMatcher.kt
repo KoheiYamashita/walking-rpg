@@ -16,6 +16,7 @@ import com.walkingrpg.shared.domain.walk.LocationSample
  * パイプライン（順序に意味がある）：
  * 1. **精度フィルタ**：誤差の大きいサンプルを落とす（[MapMatchingConfig.maxAccuracyMeters]）
  * 2. **速度フィルタ**：歩行ではありえない速度が続く区間＝電車・バスを落とす
+ *    （[VehicleRunFilter]。距離の計算と**同じ規則・同じ閾値**を使う）
  * 3. **スナップ**：残ったサンプルを最寄りのwayへ（上限距離あり）。ただし直前のwayには
  *    粘着する（[MapMatchingConfig.hysteresisMarginMeters]）
  * 4. **連続性チェック**：単発の飛びをノイズとして均し（[MapMatchingConfig.minRunSamples]）、
@@ -56,60 +57,15 @@ object MapMatcher {
         val ordered = samples.sortedWith(compareBy({ it.timestampMs }, { it.latitude }, { it.longitude }))
 
         val accurate = ordered.filter { it.accuracyMeters <= config.maxAccuracyMeters }
-        val walking = dropVehicleRuns(accurate, config)
+        val walking = VehicleRunFilter.dropVehicleRuns(
+            samples = accurate,
+            maxWalkingSpeedMps = config.maxWalkingSpeedMps,
+            vehicleMinDurationMs = config.vehicleMinDurationMs,
+        )
         val labels = label(walking, ways, config)
         val smoothed = smoothNoise(labels, config.minRunSamples)
 
         return toPassages(sessionId, walking, smoothed, config)
-    }
-
-    /**
-     * 速度フィルタ（design.md §9「移動手段判定」）。
-     *
-     * 連続する2サンプルの区間ごとに速度を見て、超過が
-     * [MapMatchingConfig.vehicleMinDurationMs] 以上続いた区間のサンプルを丸ごと落とす。
-     * 1区間だけの超過を落とさないのは、それがGPSの飛び（誤測位）の形だから。
-     * 判定は「歩いた区間か」だけで、電車かバスか自転車かは区別しない。
-     */
-    private fun dropVehicleRuns(
-        samples: List<LocationSample>,
-        config: MapMatchingConfig,
-    ): List<LocationSample> {
-        if (samples.size < 2) return samples
-
-        // interval[i] は samples[i] と samples[i + 1] の間
-        val isFast = BooleanArray(samples.size - 1) { index ->
-            val from = samples[index]
-            val to = samples[index + 1]
-            val elapsedMs = to.timestampMs - from.timestampMs
-            // 同時刻・時刻逆転のサンプルからは速度が出せない（0除算・負の時間）。
-            // 端末が同じ時刻で複数返すことは実際にあるので、落とさず「速くない」と見る。
-            if (elapsedMs <= 0L) {
-                false
-            } else {
-                val meters = GeoDistance.distanceMeters(from.toGeoPoint(), to.toGeoPoint())
-                meters / (elapsedMs / 1000.0) > config.maxWalkingSpeedMps
-            }
-        }
-
-        val excluded = BooleanArray(samples.size)
-        var index = 0
-        while (index < isFast.size) {
-            if (!isFast[index]) {
-                index++
-                continue
-            }
-            var end = index
-            while (end + 1 < isFast.size && isFast[end + 1]) end++
-            val durationMs = samples[end + 1].timestampMs - samples[index].timestampMs
-            if (durationMs >= config.vehicleMinDurationMs) {
-                // 区間の両端のサンプルも乗り物側にいたので一緒に落とす
-                for (target in index..end + 1) excluded[target] = true
-            }
-            index = end + 1
-        }
-
-        return samples.filterIndexed { position, _ -> !excluded[position] }
     }
 
     /** サンプル列を1件ずつ道に貼る。直前の札を持ち回るので**順に**処理する。 */
