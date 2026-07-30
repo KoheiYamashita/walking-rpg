@@ -98,8 +98,15 @@ internal class AndroidSecureStorage(context: Context) : SecureStorage {
 
     private fun String.decodeBase64(): ByteArray = Base64.decode(this, Base64.NO_WRAP)
 
-    private companion object {
-        /** backup rules の `path` と一致させること（変えるなら両方直す）。 */
+    internal companion object {
+        /**
+         * backup rules の `path` と一致させること（変えるなら両方直す）。
+         *
+         * `private` ではなく `internal` にしてあるのは、
+         * `BackupRulesConsistencyTest` がこの値と `backup_rules.xml` /
+         * `data_extraction_rules.xml` の `path` の一致を検証するため
+         * ＝食い違ったらビルドで気付く（食い違うとAPIキーがバックアップに乗る）。
+         */
         const val PREFS_NAME = "walking_rpg_secrets"
         const val KEYSTORE_PROVIDER = "AndroidKeyStore"
         const val KEY_ALIAS = "walking_rpg_secure_storage"

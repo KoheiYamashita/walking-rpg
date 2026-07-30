@@ -1,7 +1,9 @@
 package com.walkingrpg.shared.di
 
 import com.walkingrpg.shared.platform.AndroidAppSettings
+import com.walkingrpg.shared.platform.AndroidBackupArchive
 import com.walkingrpg.shared.platform.AndroidDatabaseDriverFactory
+import com.walkingrpg.shared.platform.AndroidFilePicker
 import com.walkingrpg.shared.platform.AndroidFileShare
 import com.walkingrpg.shared.platform.AndroidLocationPermissionController
 import com.walkingrpg.shared.platform.AndroidLocationProvider
@@ -11,11 +13,13 @@ import com.walkingrpg.shared.platform.AndroidSessionKeeper
 import com.walkingrpg.shared.platform.AndroidSnapshotImageStore
 import com.walkingrpg.shared.platform.AndroidWalkNotifier
 import com.walkingrpg.shared.platform.AppSettings
+import com.walkingrpg.shared.platform.BackupArchive
 import com.walkingrpg.shared.platform.AndroidHaptics
 import com.walkingrpg.shared.platform.Haptics
 import com.walkingrpg.shared.domain.llm.NetworkStatus
 import com.walkingrpg.shared.domain.steps.DailyStepsSource
 import com.walkingrpg.shared.platform.DatabaseDriverFactory
+import com.walkingrpg.shared.platform.FilePicker
 import com.walkingrpg.shared.platform.FileShare
 import com.walkingrpg.shared.platform.HealthConnectDailyStepsSource
 import com.walkingrpg.shared.platform.LocationPermissionController
@@ -61,4 +65,10 @@ actual val platformModule: Module = module {
     // --- 設定・キー保管（issue #6） ---
     single<SecureStorage> { AndroidSecureStorage(androidContext()) }
     single<AppSettings> { AndroidAppSettings(androidContext()) }
+
+    // --- バックアップ（issue #18） ---
+    // zipは java.util.zip（依存を足さない）。ファイル選択は MainActivity が
+    // attach でランチャーを預けるので、権限コントローラと同じく具象型でも解決できるようにする
+    single<BackupArchive> { AndroidBackupArchive() }
+    single { AndroidFilePicker(androidContext()) } bind FilePicker::class
 }

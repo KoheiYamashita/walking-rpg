@@ -36,3 +36,8 @@ selectAllStepImports:
 SELECT date, steps, distance_estimate
 FROM step_import
 ORDER BY date;
+
+-- 手動インポート（architecture.md §6・issue #18）の全入れ替え
+-- （deleteAll → upsert を1トランザクション。BackupStore）。
+deleteAllStepImports:
+DELETE FROM step_import;

@@ -60,3 +60,16 @@ SELECT id, session_id, place_ref, angle, said_at
 FROM utterance_log
 WHERE session_id = ?
 ORDER BY id;
+
+-- 手動エクスポート（architecture.md §6・issue #18）の読み口。
+-- 再計算できない追記ログなので、真実の源と同じくバックアップの対象。
+-- **id は zip に入れない**（AUTOINCREMENTの採番でしかなく、外から参照されない）。
+-- 並びだけ id 順に固定して、同じDBからは同じzipが出るようにする。
+selectAllUtterances:
+SELECT id, session_id, place_ref, angle, said_at
+FROM utterance_log
+ORDER BY id;
+
+-- 手動インポートの全入れ替え（deleteAll → insertUtterance を1トランザクション。BackupStore）。
+deleteAllUtterances:
+DELETE FROM utterance_log;

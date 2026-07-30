@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
@@ -76,6 +77,10 @@ fun SettingsScreen(
             onBlurRadiusSelected = viewModel::onBlurRadiusSelected,
             onRegisterHome = viewModel::onRegisterHome,
             onReimportOsmArea = viewModel::onReimportOsmArea,
+            onExportBackup = viewModel::onExportBackup,
+            onImportBackupRequested = viewModel::onImportBackupRequested,
+            onImportBackupConfirmed = viewModel::onImportBackupConfirmed,
+            onImportBackupDismissed = viewModel::onImportBackupDismissed,
         ),
         modifier = modifier,
     )
@@ -111,6 +116,10 @@ data class SettingsCallbacks(
     val onBlurRadiusSelected: (Int) -> Unit,
     val onRegisterHome: () -> Unit,
     val onReimportOsmArea: () -> Unit,
+    val onExportBackup: () -> Unit,
+    val onImportBackupRequested: () -> Unit,
+    val onImportBackupConfirmed: () -> Unit,
+    val onImportBackupDismissed: () -> Unit,
 )
 
 /** 状態を引数で受け取るstatelessな描画本体。 */
@@ -134,6 +143,11 @@ fun SettingsContent(
                 CircularProgressIndicator()
             }
             return@Scaffold
+        }
+
+        // 破壊的操作の確認（issue #18）。状態はUiState側にあるので remember を持たない
+        if (uiState.backupImportConfirming) {
+            ImportBackupConfirmDialog(callbacks)
         }
 
         LazyColumn(
@@ -161,7 +175,7 @@ fun SettingsContent(
 
             item { HorizontalDivider() }
             item { SectionTitle("バックアップ") }
-            item { BackupSection() }
+            item { BackupSection(uiState, callbacks) }
 
             item { HorizontalDivider() }
             item { SectionTitle("デバッグ情報") }
@@ -443,22 +457,101 @@ private fun AreaSection(uiState: SettingsUiState, callbacks: SettingsCallbacks) 
     }
 }
 
-/** バックアップ（design.md §9「手動エクスポート/インポート」）の導線。実体は issue #18。 */
+/**
+ * バックアップ（design.md §9「手動エクスポート/インポート」・architecture.md §6）。
+ *
+ * OS自動バックアップは設定済み（`backup_rules.xml` / `data_extraction_rules.xml`）なので、
+ * ここに出すのは手動の2本だけ。**インポートは破壊的なので確認ダイアログを必ず挟む**
+ * （ダイアログ本体は [SettingsContent] 側。押した瞬間に走る導線を作らない）。
+ */
 @Composable
-private fun BackupSection() {
+private fun BackupSection(uiState: SettingsUiState, callbacks: SettingsCallbacks) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(
-            text = "散歩の記録は端末のDBに入っていて、OS標準の自動バックアップの対象です。" +
-                "手動でのエクスポート／インポートは準備中です（issue #18）。",
+            text = "散歩の記録・アルバムは端末のDBと画像で、OS標準の自動バックアップの対象です。" +
+                "機種変更や念のための保管には、下のエクスポートでzipを書き出してください" +
+                "（インポートで元の状態に戻せます）。",
             style = MaterialTheme.typography.bodySmall,
         )
-        Button(onClick = {}, enabled = false, modifier = Modifier.fillMaxWidth()) {
-            Text("エクスポート（準備中）")
+        Text(
+            text = "書き出すzipには散歩の位置情報（自宅を含む）が入ります。保存先の選択にご注意ください。",
+            style = MaterialTheme.typography.bodySmall,
+        )
+
+        Button(
+            onClick = callbacks.onExportBackup,
+            enabled = !uiState.isExportingBackup && !uiState.isImportingBackup,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(if (uiState.isExportingBackup) "書き出し中…" else "エクスポート（zipを共有）")
         }
-        Button(onClick = {}, enabled = false, modifier = Modifier.fillMaxWidth()) {
-            Text("インポート（準備中）")
+
+        uiState.backupExportResult?.let { result ->
+            Text(
+                text = "${result.fileName} を書き出しました（${result.byteSize / 1024}KB）。",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            MetricRow("散歩", "${result.counts.sessionCount}件")
+            MetricRow("測位サンプル", "${result.counts.sampleCount}件")
+            MetricRow("アルバム", "${result.counts.snapshotCount}ヶ月")
         }
+        uiState.backupExportError?.let { ErrorText(it) }
+
+        HorizontalDivider()
+
+        Text(
+            text = "インポートすると、いまの記録はすべてzipの中身に置き換わります。" +
+                "先にエクスポートしておくと元に戻せます。",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Button(
+            onClick = callbacks.onImportBackupRequested,
+            enabled = !uiState.isExportingBackup && !uiState.isImportingBackup,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(if (uiState.isImportingBackup) "取り込み中…" else "インポート（zipから復元）")
+        }
+
+        uiState.backupImportResult?.let { result ->
+            Text(
+                text = "取り込みました（散歩${result.counts.sessionCount}件・" +
+                    "アルバム${result.counts.snapshotCount}ヶ月）。",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            // 自宅はセキュアストレージ側＝バックアップの対象外。必ず伝える
+            Text(text = result.notice, style = MaterialTheme.typography.bodyMedium)
+        }
+        uiState.backupImportError?.let { ErrorText(it) }
     }
+}
+
+/**
+ * インポートの確認。**取り返しがつかない操作なので、既定の選択は「やめる」側に置く**
+ * （`dismissButton` ではなく確認ボタンを明示的に押させる）。
+ */
+@Composable
+private fun ImportBackupConfirmDialog(callbacks: SettingsCallbacks) {
+    AlertDialog(
+        onDismissRequest = callbacks.onImportBackupDismissed,
+        title = { Text("バックアップから復元しますか？") },
+        text = {
+            Text(
+                "現在の記録はすべて置き換えられます（散歩・通過・歩数・天候・" +
+                    "パートナーの発話履歴・アルバム）。この操作は取り消せません。\n\n" +
+                    "続けると、ファイルの選択画面が開きます。",
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = callbacks.onImportBackupConfirmed) {
+                Text("置き換える")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = callbacks.onImportBackupDismissed) {
+                Text("やめる")
+            }
+        },
+    )
 }
 
 /** 直近の失敗理由。何も起きていなければ「異常なし」だけを出す。 */

@@ -2,6 +2,10 @@ package com.walkingrpg.app.ui.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.walkingrpg.shared.domain.backup.ExportBackupResult
+import com.walkingrpg.shared.domain.backup.ExportBackupUseCase
+import com.walkingrpg.shared.domain.backup.ImportBackupResult
+import com.walkingrpg.shared.domain.backup.ImportBackupUseCase
 import com.walkingrpg.shared.domain.osm.GetOsmMasterCountsUseCase
 import com.walkingrpg.shared.domain.osm.OsmImportResult
 import com.walkingrpg.shared.domain.osm.OsmMasterCounts
@@ -75,6 +79,16 @@ data class SettingsUiState(
     val isImporting: Boolean = false,
     val importResult: OsmImportResult? = null,
     val importError: String? = null,
+
+    // --- バックアップ（issue #18） ---
+    val isExportingBackup: Boolean = false,
+    val backupExportResult: ExportBackupResult? = null,
+    val backupExportError: String? = null,
+    val isImportingBackup: Boolean = false,
+    /** インポートの確認ダイアログを出しているか（破壊的操作なので必ず1枚挟む）。 */
+    val backupImportConfirming: Boolean = false,
+    val backupImportResult: ImportBackupResult.Success? = null,
+    val backupImportError: String? = null,
 ) {
     val needsPermission: Boolean get() = permission != LocationPermissionStatus.GRANTED
 
@@ -104,7 +118,11 @@ data class SettingsUiState(
         "homeRegistered=$homeRegistered, homeBlurRadiusMeters=$homeBlurRadiusMeters, " +
         "isRegisteringHome=$isRegisteringHome, homeError=$homeError, homeNotice=$homeNotice, " +
         "osmCounts=$osmCounts, isImporting=$isImporting, importResult=$importResult, " +
-        "importError=$importError)"
+        "importError=$importError, isExportingBackup=$isExportingBackup, " +
+        "backupExportResult=$backupExportResult, backupExportError=$backupExportError, " +
+        "isImportingBackup=$isImportingBackup, " +
+        "backupImportConfirming=$backupImportConfirming, " +
+        "backupImportResult=$backupImportResult, backupImportError=$backupImportError)"
 }
 
 /**
@@ -151,6 +169,8 @@ class SettingsViewModel(
     private val updateHomeBlurRadius: UpdateHomeBlurRadiusUseCase,
     private val reimportOsmArea: ReimportOsmAreaUseCase,
     private val getOsmMasterCounts: GetOsmMasterCountsUseCase,
+    private val exportBackup: ExportBackupUseCase,
+    private val importBackup: ImportBackupUseCase,
     observeLocationPermission: ObserveLocationPermissionUseCase,
     private val requestLocationPermission: RequestLocationPermissionUseCase,
     private val refreshLocationPermission: RefreshLocationPermissionUseCase,
@@ -376,6 +396,110 @@ class SettingsViewModel(
                     it.copy(
                         isImporting = false,
                         importError = error.message ?: "取り込みに失敗しました。",
+                    )
+                }
+            }
+        }
+    }
+
+    // --- バックアップ（issue #18） ---
+
+    /**
+     * 全データをzipにして共有UIへ渡す（[ExportBackupUseCase]）。
+     *
+     * **書き出すzipには自宅を含む実座標が入る**（`BackupData` のKDoc）。
+     * 出力先はユーザーが選ぶ共有先だけなので、ここで確認は挟まない
+     * （壊れるものが無い＝読み取りだけの操作）。
+     */
+    fun onExportBackup() {
+        if (_uiState.value.isExportingBackup) return
+        _uiState.update {
+            it.copy(isExportingBackup = true, backupExportError = null, backupExportResult = null)
+        }
+        viewModelScope.launch {
+            try {
+                val result = exportBackup()
+                _uiState.update {
+                    it.copy(isExportingBackup = false, backupExportResult = result)
+                }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (error: Throwable) {
+                _uiState.update {
+                    it.copy(
+                        isExportingBackup = false,
+                        backupExportError = error.message ?: "書き出しに失敗しました。",
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * インポートの確認を求める。**押した瞬間には何も起きない**：
+     * インポートは現在の記録をすべて置き換える破壊的操作なので、
+     * ファイル選択の前に必ず1枚挟む（[onImportBackupConfirmed] が実行の口）。
+     */
+    fun onImportBackupRequested() {
+        if (_uiState.value.isImportingBackup) return
+        _uiState.update {
+            it.copy(
+                backupImportConfirming = true,
+                backupImportError = null,
+                backupImportResult = null,
+            )
+        }
+    }
+
+    /** 確認ダイアログを閉じる（何も起きない）。 */
+    fun onImportBackupDismissed() {
+        _uiState.update { it.copy(backupImportConfirming = false) }
+    }
+
+    /**
+     * 確認のうえでインポートする（[ImportBackupUseCase]）。
+     *
+     * 検証に失敗した場合はDBに何も書かれていない（UseCase側の保証）ので、
+     * エラーを出すだけでよい。成功時のメッセージには**自宅の再登録の案内**が入る
+     * （`HOME_NOT_RESTORED_NOTICE`：自宅はバックアップの対象外）。
+     */
+    fun onImportBackupConfirmed() {
+        if (_uiState.value.isImportingBackup) return
+        _uiState.update {
+            it.copy(
+                backupImportConfirming = false,
+                isImportingBackup = true,
+                backupImportError = null,
+                backupImportResult = null,
+            )
+        }
+        viewModelScope.launch {
+            try {
+                when (val result = importBackup()) {
+                    is ImportBackupResult.Success -> {
+                        _uiState.update {
+                            it.copy(isImportingBackup = false, backupImportResult = result)
+                        }
+                        // 取り込んだデータに合わせて件数表示を読み直す
+                        // （マスタは入れ替わらないが、失敗の表示を残さないため通す）
+                        refreshOsmCounts()
+                    }
+
+                    // 選ばずに閉じただけ。失敗ではないのでエラーは出さない
+                    ImportBackupResult.Cancelled ->
+                        _uiState.update { it.copy(isImportingBackup = false) }
+
+                    is ImportBackupResult.Failure -> _uiState.update {
+                        it.copy(isImportingBackup = false, backupImportError = result.message)
+                    }
+                }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (error: Throwable) {
+                _uiState.update {
+                    it.copy(
+                        isImportingBackup = false,
+                        backupImportError = error.message ?: "取り込みに失敗しました。",
                     )
                 }
             }

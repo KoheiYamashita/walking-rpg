@@ -10,11 +10,11 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flow
 
 /**
- * iOS側の測位まわりのスタブ。
+ * iOS側の測位・ファイル入出力まわりのスタブ。
  *
- * 動作検証はAndroid優先方針（issue #2 備考）のため、CoreLocation の実装は
- * iOSスパイク（#3）で入れる。ここでは「黙って0件」ではなく明示的に失敗させ、
- * 未実装であることが実行時にわかるようにしておく。
+ * 動作検証はAndroid優先方針（issue #2 備考）のため、CoreLocation・共有UI・
+ * ファイル選択・zipの実装は iOSスパイク（#3）で入れる。ここでは「黙って0件」ではなく
+ * 明示的に失敗させ、未実装であることが実行時にわかるようにしておく。
  */
 
 internal class IosLocationProvider : LocationProvider {
@@ -45,5 +45,37 @@ internal class IosFileShare : FileShare {
     override suspend fun shareText(fileName: String, mimeType: String, content: String) {
         // TODO(#3): UIActivityViewController で共有する
         throw NotImplementedError("iOSの共有は未実装です（#3）")
+    }
+
+    override suspend fun shareBytes(fileName: String, mimeType: String, bytes: ByteArray) {
+        // TODO(#3): UIActivityViewController で共有する（手動エクスポートのzip。#18）
+        throw NotImplementedError("iOSの共有は未実装です（#3）")
+    }
+}
+
+/**
+ * 手動インポートのファイル選択（issue #18）。
+ *
+ * TODO(#3): UIDocumentPickerViewController で選ばせる。
+ */
+internal class IosFilePicker : FilePicker {
+    override suspend fun pickBytes(mimeType: String): ByteArray? {
+        throw NotImplementedError("iOSのファイル選択は未実装です（#3）")
+    }
+}
+
+/**
+ * 手動エクスポート／インポートのzip入出力（issue #18）。
+ *
+ * TODO(#3): `libcompression` か Foundation の Archive API でzipを組む
+ *  （`java.util.zip` に相当するものがKMP共通には無い）。
+ */
+internal class IosBackupArchive : BackupArchive {
+    override fun write(entries: List<BackupEntry>): ByteArray {
+        throw NotImplementedError("iOSのzip書き出しは未実装です（#3）")
+    }
+
+    override fun read(zipBytes: ByteArray): List<BackupEntry> {
+        throw NotImplementedError("iOSのzip読み込みは未実装です（#3）")
     }
 }

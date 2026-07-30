@@ -58,3 +58,17 @@ countPassagesBySession:
 SELECT COUNT(*)
 FROM passage
 WHERE session_id = ?;
+
+-- 手動エクスポート（architecture.md §6・issue #18）の読み口。
+-- passage を zip に含めるのは「同一状態を厳密に戻す」ため：再マッチはできるが、
+-- 閾値やアルゴリズムが変わっていると復元後の街が元と違う姿になる。
+selectAllPassages:
+SELECT session_id, way_id, ts
+FROM passage
+ORDER BY session_id, ts, way_id;
+
+-- 手動インポートの全入れ替え（deleteAll → insert を1トランザクション。BackupStore）。
+-- セッション単位の deletePassagesBySession とは別口：インポートは
+-- 「今あるものを全部捨てて、zipの中身にする」なので、消す範囲がDB全体になる。
+deleteAllPassages:
+DELETE FROM passage;

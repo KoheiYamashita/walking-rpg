@@ -3,13 +3,17 @@ package com.walkingrpg.shared.di
 import com.walkingrpg.shared.domain.llm.NetworkStatus
 import com.walkingrpg.shared.domain.steps.DailyStepsSource
 import com.walkingrpg.shared.platform.AppSettings
+import com.walkingrpg.shared.platform.BackupArchive
 import com.walkingrpg.shared.platform.DatabaseDriverFactory
+import com.walkingrpg.shared.platform.FilePicker
 import com.walkingrpg.shared.platform.FileShare
 import com.walkingrpg.shared.platform.Haptics
 import com.walkingrpg.shared.platform.IosAppSettings
+import com.walkingrpg.shared.platform.IosBackupArchive
 import com.walkingrpg.shared.platform.IosDailyStepsSource
 import com.walkingrpg.shared.platform.IosDatabaseDriverFactory
 import com.walkingrpg.shared.platform.IosHaptics
+import com.walkingrpg.shared.platform.IosFilePicker
 import com.walkingrpg.shared.platform.IosFileShare
 import com.walkingrpg.shared.platform.IosLocationPermissionController
 import com.walkingrpg.shared.platform.IosLocationProvider
@@ -57,4 +61,8 @@ actual val platformModule: Module = module {
     // --- 設定・キー保管（issue #6） ---
     single<SecureStorage> { IosSecureStorage() }
     single<AppSettings> { IosAppSettings() }
+
+    // --- バックアップ（issue #18）。実装は #3 でzipとDocument Pickerに差し替える ---
+    single<BackupArchive> { IosBackupArchive() }
+    single<FilePicker> { IosFilePicker() }
 }

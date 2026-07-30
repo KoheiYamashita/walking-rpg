@@ -41,3 +41,16 @@ ORDER BY cache_key;
 
 countLlmCache:
 SELECT COUNT(*) FROM llm_cache;
+
+-- 手動エクスポート（architecture.md §6・issue #18）の読み口。
+-- この表は捨てても作り直せる導出キャッシュだが、**zipには入れる**：
+-- 作り直しはLLMの再課金を意味するので、機種変更で生成文が戻るほうが得。
+-- prompt_hash は同じ事実から計算し直されるので、復元後も突き合わせは成立する。
+selectAllLlmCache:
+SELECT cache_key, kind, prompt_hash, text, created_at
+FROM llm_cache
+ORDER BY cache_key;
+
+-- 手動インポートの全入れ替え（deleteAll → upsert を1トランザクション。BackupStore）。
+deleteAllLlmCache:
+DELETE FROM llm_cache;
