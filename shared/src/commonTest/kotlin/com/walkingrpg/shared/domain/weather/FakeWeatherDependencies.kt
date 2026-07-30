@@ -5,6 +5,9 @@ import com.walkingrpg.shared.domain.setup.LlmConnectionSettings
 import com.walkingrpg.shared.domain.setup.SetupRepository
 import com.walkingrpg.shared.domain.setup.WeatherProviderChoice
 import com.walkingrpg.shared.domain.setup.WeatherSettings
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.yield
 
 /**
@@ -27,12 +30,18 @@ internal class FakeSessionWeatherRepository(
     override suspend fun save(weather: SessionWeather) {
         saved += weather
         rows[weather.sessionId] = weather
+        revision.value++
     }
 
     override suspend fun weather(sessionId: Long): SessionWeather? = rows[sessionId]
 
+    // 保存のたびに流し直す（実装のSQLDelight購読に相当する動き）
+    override fun observe(sessionId: Long): Flow<SessionWeather?> = revision.map { rows[sessionId] }
+
     override suspend fun sessionIdsWithoutWeather(): List<Long> =
         finishedSessionIds.filterNot { it in rows }
+
+    private val revision = MutableStateFlow(0)
 
     fun rows(): Map<Long, SessionWeather> = rows.toMap()
 }

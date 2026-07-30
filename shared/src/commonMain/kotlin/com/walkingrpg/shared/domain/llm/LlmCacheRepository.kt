@@ -1,5 +1,7 @@
 package com.walkingrpg.shared.domain.llm
 
+import kotlinx.coroutines.flow.Flow
+
 /**
  * 生成済みテキストのキャッシュ（`llm_cache`）の永続化境界（architecture.md §4「LLM」）。
  *
@@ -32,6 +34,18 @@ interface LlmCacheRepository {
 
     /** 1件引く。行が無ければ `null`（プロンプト一致の判定は呼び出し側＝[LlmCacheEntry.matches]）。 */
     suspend fun entry(cacheKey: String): LlmCacheEntry?
+
+    /**
+     * 1件を購読する（行が無いあいだは `null`、書かれたら流れる）。
+     *
+     * **遅延差し込みの土台**（issue #15）。振り返りの画面は数値サマリだけで先に完成し、
+     * パートナーの一言は生成できた瞬間にここ経由で差し替わる
+     * （architecture.md §5「数値は即時、文章は遅延OK」）。
+     *
+     * [entry] と別に用意しているのは、読み切りで足りる経路（散歩中のフレーバー・図鑑）に
+     * 購読の都合を持ち込まないため。
+     */
+    fun observe(cacheKey: String): Flow<LlmCacheEntry?>
 
     /**
      * 同じ [LlmTaskKind] の行を全部引く（キー→行）。
@@ -84,3 +98,12 @@ fun poiFlavorLogicalKey(poiId: String): String = "poi:$poiId"
  * OSMのIDが変わっても影響を受けない＝生成済みの記述文は一度作れば効き続ける。
  */
 fun speciesDescriptionLogicalKey(speciesId: String): String = "species:$speciesId"
+
+/**
+ * 振り返りの一言の論理キー。
+ *
+ * セッションIDは真実の源（`walk_session`）の主キーなので、対象圏を取り直しても
+ * カタログを直しても影響を受けない。1セッション1行＝同じ散歩の一言は作り直しても
+ * 増えない（`llm_cache` の1論理キー1行）。
+ */
+fun walkReviewLogicalKey(sessionId: Long): String = "session:$sessionId"

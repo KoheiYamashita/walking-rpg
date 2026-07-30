@@ -4,6 +4,7 @@ import com.walkingrpg.app.AppViewModel
 import com.walkingrpg.app.ui.codex.CodexViewModel
 import com.walkingrpg.app.ui.home.HomeViewModel
 import com.walkingrpg.app.ui.map.MapViewModel
+import com.walkingrpg.app.ui.review.ReviewViewModel
 import com.walkingrpg.app.ui.setup.SetupViewModel
 import com.walkingrpg.shared.di.sharedModule
 import org.koin.core.KoinApplication
@@ -21,6 +22,7 @@ val appModule = module {
     viewModelOf(::HomeViewModel)
     viewModelOf(::MapViewModel)
     viewModelOf(::CodexViewModel)
+    viewModelOf(::ReviewViewModel)
     viewModelOf(::SetupViewModel)
 }
 

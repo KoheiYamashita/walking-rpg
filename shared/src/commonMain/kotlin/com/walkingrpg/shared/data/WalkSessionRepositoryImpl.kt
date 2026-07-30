@@ -93,6 +93,18 @@ internal class WalkSessionRepositoryImpl(
         }
     }
 
+    override suspend fun recentFinishedSessions(limit: Int): List<WalkSession> =
+        withContext(dispatcher) {
+            sessions.selectRecentFinishedSessions(limit.toLong()).executeAsList().map { row ->
+                WalkSession(
+                    id = row.id,
+                    startedAtMs = row.started_at,
+                    endedAtMs = row.ended_at,
+                    endReason = row.end_reason.toEndReason(),
+                )
+            }
+        }
+
     override suspend fun session(sessionId: Long): WalkSession? = withContext(dispatcher) {
         sessions.selectSession(sessionId).executeAsOneOrNull()?.let { row ->
             WalkSession(

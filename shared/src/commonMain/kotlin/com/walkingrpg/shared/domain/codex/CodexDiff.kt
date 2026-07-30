@@ -28,4 +28,24 @@ object CodexDiff {
             .filter { it.isDiscovered && it.speciesId !in discoveredBefore }
             .mapTo(mutableSetOf()) { it.speciesId }
     }
+
+    /**
+     * [before] では予兆が立っていなくて、[after] で [ForeshadowStage.NEAR] になった種のID。
+     *
+     * 振り返り（design.md §3 の 17:08「さっきの振動の中身は川辺の青い羽根」）が
+     * 「今日、何に近づいたのか」を出すための材料。**発見済みになった種は含めない**：
+     * そちらは [newlyDiscoveredSpeciesIds] の側で「出会った」として出るので、
+     * 同じ散歩で両方に並ぶと「近づいた」が二重に見える。
+     */
+    fun newlyForeshadowedSpeciesIds(
+        before: List<CodexProgress>,
+        after: List<CodexProgress>,
+    ): Set<String> {
+        val nearBefore = before
+            .filter { it.foreshadowStage == ForeshadowStage.NEAR }
+            .mapTo(mutableSetOf()) { it.speciesId }
+        return after
+            .filter { it.foreshadowStage == ForeshadowStage.NEAR && it.speciesId !in nearBefore }
+            .mapTo(mutableSetOf()) { it.speciesId }
+    }
 }

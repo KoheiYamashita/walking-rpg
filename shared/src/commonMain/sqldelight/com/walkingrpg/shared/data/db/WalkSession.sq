@@ -49,6 +49,17 @@ SELECT id, started_at, ended_at, end_reason
 FROM walk_session
 WHERE id = ?;
 
+-- 振り返りの一言（llm_cache）を作る候補＝直近の終了済みセッション（新しい順）。
+-- 過去全件を返さないのは、半年前の散歩に今から文章を付けても誰も開かないから
+-- （件数の根拠は LlmGenerationConfig.DEFAULT_WALK_REVIEW_SESSION_LIMIT）。
+-- 記録中（ended_at IS NULL）は含めない：まだ内容が確定していない。
+selectRecentFinishedSessions:
+SELECT id, started_at, ended_at, end_reason
+FROM walk_session
+WHERE ended_at IS NOT NULL
+ORDER BY ended_at DESC, id DESC
+LIMIT :limit;
+
 selectSessionSummaries:
 SELECT
     s.id,

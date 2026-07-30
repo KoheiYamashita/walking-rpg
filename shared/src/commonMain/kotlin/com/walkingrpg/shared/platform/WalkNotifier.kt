@@ -14,7 +14,13 @@ interface WalkNotifier {
     /**
      * 自動終了したときの「おかえり」。押し忘れを構造的に消すための出口（design.md §3）。
      *
+     * タップしたら**そのセッションの振り返りが開く**（design.md §3 の 17:08
+     * 「『おかえり』通知。振り返りを開く」）。そのために [sessionId] を受け取って
+     * 通知のタップ先に載せる。載せ方はプラットフォームごとに違う（Androidは
+     * PendingIntent の extra → `MainActivity` → `RequestPendingReviewUseCase`）。
+     *
+     * @param sessionId 畳んだセッション。振り返りを開く先。
      * @param durationMs 畳んだセッションの長さ。本文に出す。
      */
-    fun notifyHomecoming(durationMs: Long)
+    fun notifyHomecoming(sessionId: Long, durationMs: Long)
 }

@@ -81,6 +81,8 @@ internal class FakePassageRepository(
     var passCounts: Map<Long, Int> = emptyMap(),
     /** 図鑑側の材料（道 → その道を通った散歩）。置かなければ「まだ誰も歩いていない」。 */
     var sessionVisits: Map<Long, List<SessionVisit>> = emptyMap(),
+    /** 振り返り側の材料（セッション → そのセッションの通過）。 */
+    var sessionPassages: Map<Long, List<Passage>> = emptyMap(),
 ) : PassageRepository {
 
     val replacedSessions = mutableListOf<Long>()
@@ -89,7 +91,8 @@ internal class FakePassageRepository(
         replacedSessions += sessionId
     }
 
-    override suspend fun passages(sessionId: Long): List<Passage> = emptyList()
+    override suspend fun passages(sessionId: Long): List<Passage> =
+        sessionPassages[sessionId].orEmpty()
 
     override suspend fun passCountsByWay(): Map<Long, Int> = passCounts
 

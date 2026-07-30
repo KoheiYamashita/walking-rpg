@@ -23,6 +23,8 @@ import com.walkingrpg.shared.data.llm.OpenAiLlmClient
 import com.walkingrpg.shared.data.llm.llmHttpClient
 import com.walkingrpg.shared.data.matching.PassageRepositoryImpl
 import com.walkingrpg.shared.data.osm.OsmMasterRepositoryImpl
+import com.walkingrpg.shared.data.review.InMemoryPendingReviewRepository
+import com.walkingrpg.shared.data.review.SystemTimeOfDayResolver
 import com.walkingrpg.shared.data.osm.OverpassConfig
 import com.walkingrpg.shared.data.osm.OverpassOsmAreaSource
 import com.walkingrpg.shared.data.osm.osmHttpClient
@@ -54,12 +56,14 @@ import com.walkingrpg.shared.domain.growth.RecomputeAfterWalkUseCase
 import com.walkingrpg.shared.domain.growth.RecomputeWayGrowthUseCase
 import com.walkingrpg.shared.domain.growth.WayGrowthRepository
 import com.walkingrpg.shared.domain.llm.DrainLlmGenerationQueueUseCase
+import com.walkingrpg.shared.domain.llm.GenerateWalkReviewRemarkUseCase
 import com.walkingrpg.shared.domain.llm.GetPoiFlavorUseCase
 import com.walkingrpg.shared.domain.llm.GetSpeciesDescriptionUseCase
 import com.walkingrpg.shared.domain.llm.LlmCacheRepository
 import com.walkingrpg.shared.domain.llm.LlmClientSelector
 import com.walkingrpg.shared.domain.llm.LlmGenerationConfig
 import com.walkingrpg.shared.domain.llm.LlmGenerationQueue
+import com.walkingrpg.shared.domain.llm.ObserveWalkReviewRemarkUseCase
 import com.walkingrpg.shared.domain.llm.PrebatchPoiFlavorUseCase
 import com.walkingrpg.shared.domain.llm.PrebatchSpeciesDescriptionUseCase
 import com.walkingrpg.shared.domain.map.GetMapSceneUseCase
@@ -70,6 +74,13 @@ import com.walkingrpg.shared.domain.osm.GetOsmMasterCountsUseCase
 import com.walkingrpg.shared.domain.osm.ImportOsmAreaUseCase
 import com.walkingrpg.shared.domain.osm.OsmAreaSource
 import com.walkingrpg.shared.domain.osm.OsmMasterRepository
+import com.walkingrpg.shared.domain.review.ConsumePendingReviewUseCase
+import com.walkingrpg.shared.domain.review.GetWalkReviewUseCase
+import com.walkingrpg.shared.domain.review.ObservePendingReviewUseCase
+import com.walkingrpg.shared.domain.review.PendingReviewRepository
+import com.walkingrpg.shared.domain.review.RequestPendingReviewUseCase
+import com.walkingrpg.shared.domain.review.RequestReviewForFinishedWalkUseCase
+import com.walkingrpg.shared.domain.review.TimeOfDayResolver
 import com.walkingrpg.shared.domain.setup.CompleteSetupUseCase
 import com.walkingrpg.shared.domain.setup.IsSetupCompletedUseCase
 import com.walkingrpg.shared.domain.setup.LlmConnectionTester
@@ -99,6 +110,7 @@ import com.walkingrpg.shared.domain.walk.WalkRecorder
 import com.walkingrpg.shared.domain.walk.WalkSessionExporter
 import com.walkingrpg.shared.domain.walk.WalkSessionRepository
 import com.walkingrpg.shared.domain.weather.FetchMissingSessionWeatherUseCase
+import com.walkingrpg.shared.domain.weather.ObserveSessionWeatherUseCase
 import com.walkingrpg.shared.domain.weather.SessionWeatherRepository
 import com.walkingrpg.shared.domain.weather.WeatherFetchConfig
 import com.walkingrpg.shared.domain.weather.WeatherProviderSelector
@@ -137,6 +149,9 @@ private val POI_FLAVOR_QUEUE = named("poiFlavorQueue")
 
 /** 図鑑の記述文の生成キュー（issue #13）。 */
 private val SPECIES_DESCRIPTION_QUEUE = named("speciesDescriptionQueue")
+
+/** 振り返りのパートナーの一言の生成キュー（issue #15）。 */
+private val WALK_REVIEW_REMARK_QUEUE = named("walkReviewRemarkQueue")
 
 /**
  * 天候取得用のHTTPクライアント（issue #11）。
@@ -295,6 +310,8 @@ val sharedModule = module {
     // その Mutex は全ての呼び出しで同じ1個でなければ意味がない
     // （FetchMissingSessionWeatherUseCase のKDoc「実行は直列」）。
     singleOf(::FetchMissingSessionWeatherUseCase)
+    // 振り返りが開いたままでも天候が埋まるように、読み口は購読（issue #15）
+    factoryOf(::ObserveSessionWeatherUseCase)
 
     // --- LLM生成基盤（issue #14） ---
     // 件数上限・出力上限・従量回線での抑止（LlmGenerationConfig）はここで差し替えられる。
@@ -335,8 +352,24 @@ val sharedModule = module {
     // 同じ生成を二度投げないよう実行を Mutex で直列化しており、
     // その Mutex は全ての呼び出しで同じ1個でなければ意味がない
     // （DrainLlmGenerationQueueUseCase のKDoc「実行は直列」）。
+    // 振り返りの一言（issue #15）。事前バッチ2本と違い、対象は直近の終了済みセッションだけで、
+    // **従量回線でも投げる**（GenerateWalkReviewRemarkUseCase のKDoc「従量回線でも投げる」）。
+    single<LlmGenerationQueue>(WALK_REVIEW_REMARK_QUEUE) {
+        GenerateWalkReviewRemarkUseCase(
+            walkSessionRepository = get(),
+            getWalkReview = get(),
+            cacheRepository = get(),
+            setupRepository = get(),
+            clients = get(),
+            networkStatus = get(),
+            timeOfDayResolver = get(),
+            clock = get(),
+            config = get(),
+        )
+    }
     single {
         DrainLlmGenerationQueueUseCase(
+            walkReviewRemarkQueue = get(WALK_REVIEW_REMARK_QUEUE),
             speciesDescriptionQueue = get(SPECIES_DESCRIPTION_QUEUE),
             poiFlavorQueue = get(POI_FLAVOR_QUEUE),
         )
@@ -344,6 +377,34 @@ val sharedModule = module {
     // 散歩中・図鑑の読み出し（通信しない）。生成できていないものは定型文で凌ぐ
     factoryOf(::GetPoiFlavorUseCase)
     factoryOf(::GetSpeciesDescriptionUseCase)
+    // 振り返りの一言は「読み切り」ではなく購読（生成が届いたら差し替わる）
+    factoryOf(::ObserveWalkReviewRemarkUseCase)
+
+    // --- 振り返り（issue #15） ---
+    // 数値サマリは確定データからの再計算で組む（通信しない）。閾値は成長・図鑑と同じ1個を使う
+    // ＝振り返りと地図・図鑑で数え方がずれない。種カタログは手書きの定数なのでDIに載せない
+    // （GetCodexUseCase と同じ理由：factoryOf にすると List<Species> の定義を探して落ちる）。
+    factory {
+        GetWalkReviewUseCase(
+            walkSessionRepository = get(),
+            passageRepository = get(),
+            osmMasterRepository = get(),
+            sessionWeatherRepository = get(),
+            getCodex = get(),
+            growthConfig = get(),
+            codexConfig = get(),
+        )
+    }
+    // 時間帯（パートナーの一言の材料）はタイムゾーンの知識が要るのでデータ層に置く。
+    single<TimeOfDayResolver> { SystemTimeOfDayResolver() }
+    // 「これから開く振り返り」は永続化しない（PendingReviewRepository のKDoc）。
+    // 要求する側（散歩の終了・通知のタップ）と読む側（AppViewModel）が同じ1個を見るので single。
+    single<PendingReviewRepository> { InMemoryPendingReviewRepository() }
+    factoryOf(::ObservePendingReviewUseCase)
+    factoryOf(::RequestPendingReviewUseCase)
+    factoryOf(::ConsumePendingReviewUseCase)
+    // 散歩終了イベントからの自動遷移（放置セッションは弾く）。結線は AppViewModel
+    factoryOf(::RequestReviewForFinishedWalkUseCase)
 
     // --- 初回セットアップ（issue #6） ---
     // 秘密（APIキー・自宅座標）と非秘密（URL・モデル名・完了フラグ）の振り分けは

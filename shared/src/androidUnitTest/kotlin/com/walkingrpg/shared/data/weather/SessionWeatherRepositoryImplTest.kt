@@ -6,6 +6,13 @@ import com.walkingrpg.shared.data.db.WalkingRpgDatabase
 import com.walkingrpg.shared.domain.walk.SessionEndReason
 import com.walkingrpg.shared.domain.weather.SessionWeather
 import com.walkingrpg.shared.domain.weather.WeatherCondition
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -16,15 +23,22 @@ import kotlin.test.assertNull
  * フェイクでは確かめられない「SQLそのものの正しさ」だけをここで見る
  * ＝1セッション1行に収束するか、リトライ対象の絞り込み（LEFT JOIN）が正しいか。
  */
+@OptIn(ExperimentalCoroutinesApi::class)
 class SessionWeatherRepositoryImplTest {
 
     private lateinit var database: WalkingRpgDatabase
 
-    private fun repository(): SessionWeatherRepositoryImpl {
+    /**
+     * @param dispatcher 購読（`observe`）の流し先。テストスケジューラに乗せると、
+     *  保存のあとに `runCurrent()` で決定的に受け取れる。
+     */
+    private fun repository(
+        dispatcher: CoroutineDispatcher = Dispatchers.Default,
+    ): SessionWeatherRepositoryImpl {
         val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
         WalkingRpgDatabase.Schema.create(driver)
         database = WalkingRpgDatabase(driver)
-        return SessionWeatherRepositoryImpl(database)
+        return SessionWeatherRepositoryImpl(database, dispatcher)
     }
 
     private suspend fun finishedSession(startedAtMs: Long, endedAtMs: Long): Long {
@@ -92,6 +106,25 @@ class SessionWeatherRepositoryImplTest {
 
         assertEquals(listOf(older, newer), pending, "古い順に返す（期限の近いものから埋める）")
         assertEquals(false, recording in pending, "記録中は訊く先が決まらないので対象にしない")
+    }
+
+    @Test
+    fun 購読は保存で流れる() = runTest {
+        // 振り返りを開いたまま後付け取得が終わると、天候の1行が増える（issue #15）
+        val dispatcher = UnconfinedTestDispatcher(testScheduler)
+        val repository = repository(dispatcher)
+        val sessionId = finishedSession(startedAtMs = 1_000L, endedAtMs = 2_000L)
+        val fetched = SessionWeather(sessionId, WeatherCondition.CLEAR, 18.0, fetchedAtMs = 3_000L)
+
+        val emissions = mutableListOf<SessionWeather?>()
+        val job = launch(dispatcher) { repository.observe(sessionId).toList(emissions) }
+        runCurrent()
+
+        assertEquals(listOf<SessionWeather?>(null), emissions, "未取得のあいだは null")
+        repository.save(fetched)
+        runCurrent()
+        assertEquals(listOf(null, fetched), emissions)
+        job.cancel()
     }
 
     @Test

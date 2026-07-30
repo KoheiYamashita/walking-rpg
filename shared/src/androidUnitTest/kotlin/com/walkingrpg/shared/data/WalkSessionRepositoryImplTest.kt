@@ -84,6 +84,25 @@ class WalkSessionRepositoryImplTest {
     }
 
     @Test
+    fun 直近の終了済みセッションを新しい順に返す() = runTest {
+        // 振り返りの一言の生成対象（GenerateWalkReviewRemarkUseCase）の絞り込み
+        val repository = repository()
+        val oldest = repository.startSession(startedAtMs = 1_000L)
+        repository.endSession(oldest, endedAtMs = 2_000L, reason = SessionEndReason.MANUAL)
+        val middle = repository.startSession(startedAtMs = 10_000L)
+        repository.endSession(middle, endedAtMs = 12_000L, reason = SessionEndReason.AUTO_ARRIVAL)
+        val newest = repository.startSession(startedAtMs = 20_000L)
+        repository.endSession(newest, endedAtMs = 22_000L, reason = SessionEndReason.AUTO_ARRIVAL)
+        val recording = repository.startSession(startedAtMs = 30_000L)
+
+        val recent = repository.recentFinishedSessions(limit = 2)
+
+        assertEquals(listOf(newest, middle), recent.map { it.id })
+        assertEquals(false, recording in recent.map { it.id }, "記録中は内容が確定していない")
+        assertEquals(SessionEndReason.AUTO_ARRIVAL, recent.first().endReason, "終わり方も返す")
+    }
+
+    @Test
     fun 畳んだセッションのIDを返す() = runTest {
         // 呼び出し側はこのIDで導出（passage → way_growth）を作り直す
         val repository = repository()

@@ -4,6 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.walkingrpg.shared.domain.growth.RecomputeAfterWalkUseCase
 import com.walkingrpg.shared.domain.llm.DrainLlmGenerationQueueUseCase
+import com.walkingrpg.shared.domain.review.ConsumePendingReviewUseCase
+import com.walkingrpg.shared.domain.review.ObservePendingReviewUseCase
+import com.walkingrpg.shared.domain.review.RequestReviewForFinishedWalkUseCase
 import com.walkingrpg.shared.domain.setup.IsSetupCompletedUseCase
 import com.walkingrpg.shared.domain.walk.ObserveFinishedWalksUseCase
 import com.walkingrpg.shared.domain.walk.ObserveIsWalkingUseCase
@@ -19,10 +22,10 @@ import kotlinx.coroutines.launch
 /**
  * 画面をまたいで効く「アプリ全体の状態」を持つViewModel。
  *
- * 用途は5つ：記録中の画面ON維持、初回セットアップのゲート、散歩が終わったときの
- * 導出の作り直し、天候の後付け取得、そしてLLM生成のドレイン。どれも画面の切り替えとは無関係な
- * アプリ全体の関心事なので、各画面のViewModelに配らずここ1箇所で持つ
- * （二重管理を避ける。architecture.md §2 の役割規約どおりUseCaseしか知らない）。
+ * 用途は6つ：記録中の画面ON維持、初回セットアップのゲート、散歩が終わったときの
+ * 導出の作り直し、天候の後付け取得、LLM生成のドレイン、そして振り返りを開く合図。
+ * どれも画面の切り替えとは無関係なアプリ全体の関心事なので、各画面のViewModelに配らず
+ * ここ1箇所で持つ（二重管理を避ける。architecture.md §2 の役割規約どおりUseCaseしか知らない）。
  */
 class AppViewModel(
     observeIsWalking: ObserveIsWalkingUseCase,
@@ -31,11 +34,24 @@ class AppViewModel(
     private val recomputeAfterWalk: RecomputeAfterWalkUseCase,
     private val fetchMissingSessionWeather: FetchMissingSessionWeatherUseCase,
     private val drainLlmGenerationQueue: DrainLlmGenerationQueueUseCase,
+    private val requestReviewForFinishedWalk: RequestReviewForFinishedWalkUseCase,
+    observePendingReview: ObservePendingReviewUseCase,
+    private val consumePendingReview: ConsumePendingReviewUseCase,
 ) : ViewModel() {
 
     /** 記録中は画面を消させない（design.md §3「画面はONのまま携行するのが基本」）。 */
     val keepScreenOn: StateFlow<Boolean> = observeIsWalking()
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    /**
+     * これから開くべき振り返りのセッションID（無ければ `null`）。
+     *
+     * 起点は2つ（`PendingReviewRepository` のKDoc）：散歩の自動終了と
+     * 「おかえり」通知のタップ。どちらも同じ1本に集めてあるので、
+     * 通知から開いたぶんが二重に開くことはない。消費は [onReviewOpened]。
+     */
+    val pendingReviewSessionId: StateFlow<Long?> = observePendingReview()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     private val _setupGate = MutableStateFlow(SetupGateState.Loading)
 
@@ -104,6 +120,10 @@ class AppViewModel(
         viewModelScope.launch {
             observeFinishedWalks().collect { sessionId ->
                 recompute(sessionId)
+                // 振り返りを開く合図は集計のあと（数値が確定していない振り返りを見せない）。
+                // 放置セッションでは開かない判定は UseCase 側
+                // （RequestReviewForFinishedWalkUseCase のKDoc）。
+                requestReview(sessionId)
                 // 天候は集計のあと。数値（ローカル計算）を通信より先に確定させる
                 // （architecture.md §5「数値は即時、文章は遅延OK」と同じ順序）。
                 // 起動時の取得と同じ1本を呼ぶだけ＝終わったばかりの散歩が
@@ -122,6 +142,28 @@ class AppViewModel(
      */
     fun onSetupCompleted() {
         _setupGate.value = SetupGateState.Ready
+    }
+
+    /** 振り返りを開いたので合図を消す（画面から戻ってきたときに開き直さないため）。 */
+    fun onReviewOpened() {
+        consumePendingReview()
+    }
+
+    /**
+     * 畳まれた散歩の振り返りを開くよう頼む。
+     *
+     * 例外を外に投げないのは [recompute] と同じ理由（`collect` の中で投げると購読ごと終わり、
+     * 以降の散歩が集計されなくなる）。振り返りはホームのセッション一覧からも開けるので、
+     * ここが失敗しても失われるのは自動遷移だけ。
+     */
+    private suspend fun requestReview(sessionId: Long) {
+        try {
+            requestReviewForFinishedWalk(sessionId)
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (error: Throwable) {
+            // 自動で開けなかっただけなので、状態としても残さない（一覧から開ける）。
+        }
     }
 
     /**

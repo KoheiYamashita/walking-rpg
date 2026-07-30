@@ -1,5 +1,6 @@
 package com.walkingrpg.app.ui.home
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -49,6 +50,7 @@ import org.koin.compose.viewmodel.koinViewModel
 fun HomeScreen(
     onOpenMap: () -> Unit,
     onOpenCodex: () -> Unit,
+    onOpenReview: (Long) -> Unit,
     modifier: Modifier = Modifier,
     viewModel: HomeViewModel = koinViewModel(),
 ) {
@@ -65,6 +67,7 @@ fun HomeScreen(
         onMessageShown = viewModel::onMessageShown,
         onOpenMap = onOpenMap,
         onOpenCodex = onOpenCodex,
+        onOpenReview = onOpenReview,
         modifier = modifier,
     )
 }
@@ -80,6 +83,7 @@ fun HomeContent(
     onMessageShown: () -> Unit,
     onOpenMap: () -> Unit,
     onOpenCodex: () -> Unit,
+    onOpenReview: (Long) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     // 画面ON維持は画面遷移で切れないよう App() で一元管理している（KeepScreenOn）。
@@ -191,7 +195,11 @@ fun HomeContent(
             }
 
             items(uiState.sessions, key = { it.session.id }) { summary ->
-                SessionRow(summary = summary, onExport = { onExportSession(summary.session.id) })
+                SessionRow(
+                    summary = summary,
+                    onOpenReview = { onOpenReview(summary.session.id) },
+                    onExport = { onExportSession(summary.session.id) },
+                )
             }
         }
     }
@@ -347,9 +355,20 @@ private fun MetricRow(label: String, value: String) {
     }
 }
 
+/**
+ * 記録した1セッション。
+ *
+ * **行のタップで振り返りを開く**（issue #15）。自動終了の直後は勝手に開くが、
+ * それを閉じたあと・手動で終えたあとに読み返す導線がここ。振り返りは確定データから
+ * 冪等に組み直せる（`GetWalkReviewUseCase`）ので、何日前の散歩でも同じ内容が出る。
+ */
 @Composable
-private fun SessionRow(summary: WalkSessionSummary, onExport: () -> Unit) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+private fun SessionRow(
+    summary: WalkSessionSummary,
+    onOpenReview: () -> Unit,
+    onExport: () -> Unit,
+) {
+    Card(modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenReview)) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
             horizontalArrangement = Arrangement.SpaceBetween,

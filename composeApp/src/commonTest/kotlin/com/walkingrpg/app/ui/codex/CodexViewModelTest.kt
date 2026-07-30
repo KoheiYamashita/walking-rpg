@@ -18,6 +18,7 @@ import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -115,6 +116,7 @@ class CodexViewModelTest {
     /** 記述文は「未生成なら定型文」で足りるので、キャッシュは常に空でよい。 */
     private class EmptyLlmCacheRepository : LlmCacheRepository {
         override suspend fun entry(cacheKey: String): LlmCacheEntry? = null
+        override fun observe(cacheKey: String): Flow<LlmCacheEntry?> = flowOf(null)
         override suspend fun entries(kind: LlmTaskKind): Map<String, LlmCacheEntry> = emptyMap()
         override suspend fun save(entry: LlmCacheEntry) = Unit
     }

@@ -18,13 +18,38 @@ object GrowthDiff {
      * 未踏は行が無いことで表す（[WayGrowth] のKDoc）ので、行が生えたこと自体が
      * 「何も無い → 草」という1段の変化だから。
      */
-    fun stageRaisedWayIds(before: List<WayGrowth>, after: List<WayGrowth>): Set<Long> {
+    fun stageRaisedWayIds(before: List<WayGrowth>, after: List<WayGrowth>): Set<Long> =
+        stageRaises(before, after).mapTo(mutableSetOf()) { it.wayId }
+
+    /**
+     * 段階が上がった道を**前後の段階ごと**に返す（way ID順）。
+     *
+     * [stageRaisedWayIds] が「どの道が育ったか」だけなのに対し、こちらは
+     * 「低木 → 木」まで持つ。振り返り（design.md §3 の 17:08「いつもの道が1段階育った
+     * （低木→木）」）が要求する情報がこれで、地図の強調には要らない
+     * ＝ID集合の側は残したまま、こちらから導いている（判定の規則を2箇所に書かない）。
+     */
+    fun stageRaises(before: List<WayGrowth>, after: List<WayGrowth>): List<WayStageRaise> {
         val stageBefore = before.associate { it.wayId to it.stage }
         return after
-            .filter { growth ->
+            .sortedBy { it.wayId }
+            .mapNotNull { growth ->
                 val previous = stageBefore[growth.wayId]
-                previous == null || previous < growth.stage
+                if (previous != null && previous >= growth.stage) return@mapNotNull null
+                WayStageRaise(wayId = growth.wayId, from = previous, to = growth.stage)
             }
-            .mapTo(mutableSetOf()) { it.wayId }
     }
 }
+
+/**
+ * 1本の道の段階が上がったこと。
+ *
+ * @param from 上がる前の段階。**未踏だったなら `null`**（未踏は行が無いことで表す＝
+ *  [WayGrowth] のKDoc）。呼び出し側は `null` を「何も無い → 草」として言い換える。
+ * @param to 上がった先の段階。
+ */
+data class WayStageRaise(
+    val wayId: Long,
+    val from: GrowthStage?,
+    val to: GrowthStage,
+)

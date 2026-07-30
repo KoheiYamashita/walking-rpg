@@ -11,6 +11,9 @@ import com.walkingrpg.shared.domain.setup.LlmConnectionSettings
 import com.walkingrpg.shared.domain.setup.LlmFormat
 import com.walkingrpg.shared.domain.setup.SetupRepository
 import com.walkingrpg.shared.domain.setup.WeatherSettings
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.yield
 
 /**
@@ -78,7 +81,13 @@ internal class FakeLlmCacheRepository(
     /** `save` の呼び出し履歴（置き換えが何回起きたかを見たいので列で持つ）。 */
     val saved = mutableListOf<LlmCacheEntry>()
 
+    /** 保存のたびに流し直すための版数（実装のSQLDelight購読に相当する動き）。 */
+    private val revision = MutableStateFlow(0)
+
     override suspend fun entry(cacheKey: String): LlmCacheEntry? = rows[cacheKey]
+
+    override fun observe(cacheKey: String): Flow<LlmCacheEntry?> =
+        revision.map { rows[cacheKey] }
 
     override suspend fun entries(kind: LlmTaskKind): Map<String, LlmCacheEntry> =
         rows.filterValues { it.kind == kind }
@@ -86,6 +95,7 @@ internal class FakeLlmCacheRepository(
     override suspend fun save(entry: LlmCacheEntry) {
         saved += entry
         rows[entry.cacheKey] = entry
+        revision.value++
     }
 
     fun rows(): Map<String, LlmCacheEntry> = rows.toMap()

@@ -160,7 +160,10 @@ internal class WalkRecorderImpl(
         _state.update { it.stopped(endedAtMs) }
         _finishedSessions.tryEmit(sessionId)
 
-        walkNotifier.notifyHomecoming((endedAtMs - startedAtMs).coerceAtLeast(0L))
+        walkNotifier.notifyHomecoming(
+            sessionId = sessionId,
+            durationMs = (endedAtMs - startedAtMs).coerceAtLeast(0L),
+        )
     }
 
     /**

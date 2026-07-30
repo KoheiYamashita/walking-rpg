@@ -5,6 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
 import android.util.Log
 
 /**
@@ -22,11 +23,11 @@ internal class AndroidWalkNotifier(
     private val context: Context,
 ) : WalkNotifier {
 
-    override fun notifyHomecoming(durationMs: Long) {
+    override fun notifyHomecoming(sessionId: Long, durationMs: Long) {
         runCatching {
             val manager = context.getSystemService(NotificationManager::class.java) ?: return
             ensureChannel(manager)
-            manager.notify(NOTIFICATION_ID, buildNotification(durationMs))
+            manager.notify(NOTIFICATION_ID, buildNotification(sessionId, durationMs))
         }.onFailure { Log.w(TAG, "「おかえり」通知を出せませんでした", it) }
     }
 
@@ -45,13 +46,13 @@ internal class AndroidWalkNotifier(
         )
     }
 
-    private fun buildNotification(durationMs: Long): Notification =
+    private fun buildNotification(sessionId: Long, durationMs: Long): Notification =
         Notification.Builder(context, CHANNEL_ID)
             .setContentTitle("おかえりなさい")
-            .setContentText("${formatDuration(durationMs)}の散歩を記録しました")
+            .setContentText("${formatDuration(durationMs)}の散歩を記録しました。振り返りを開けます")
             .setSmallIcon(android.R.drawable.ic_menu_mylocation)
             .setAutoCancel(true)
-            .apply { launchIntent()?.let { setContentIntent(it) } }
+            .apply { launchIntent(sessionId)?.let { setContentIntent(it) } }
             .build()
 
     /** 「1時間5分」「25分」。秒までは出さない（散歩の長さに秒の情報量は無い）。 */
@@ -62,12 +63,25 @@ internal class AndroidWalkNotifier(
         return if (hours > 0) "${hours}時間${minutes}分" else "${minutes}分"
     }
 
-    private fun launchIntent(): PendingIntent? {
+    /**
+     * タップ先＝アプリのランチャー画面＋「このセッションの振り返りを開いて」の印。
+     *
+     * `FLAG_ACTIVITY_SINGLE_TOP` を足すのは、既に起動しているときに新しい
+     * Activityを積まず `onNewIntent` で受け取るため（[WalkNotifierIntents]）。
+     * requestCode にセッションIDを使うのは、連続した散歩で古い extra が
+     * 使い回されないようにするため（`FLAG_UPDATE_CURRENT` だけでは同じ
+     * requestCode の PendingIntent が1つに畳まれる）。
+     */
+    private fun launchIntent(sessionId: Long): PendingIntent? {
         val intent = context.packageManager.getLaunchIntentForPackage(context.packageName)
+            ?.apply {
+                addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                putExtra(WalkNotifierIntents.EXTRA_REVIEW_SESSION_ID, sessionId)
+            }
             ?: return null
         return PendingIntent.getActivity(
             context,
-            0,
+            sessionId.toInt(),
             intent,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
@@ -80,4 +94,16 @@ internal class AndroidWalkNotifier(
         // WalkRecordingService の常駐通知（1001）とは別枠にする（上書きし合わない）
         const val NOTIFICATION_ID = 1002
     }
+}
+
+/**
+ * 通知のタップから振り返りを開くための取り決め（Android専用）。
+ *
+ * 通知を作るのは shared（[AndroidWalkNotifier]）だが、受けるのは composeApp の
+ * `MainActivity` なので、キー名を両方から見える場所に置く。
+ */
+object WalkNotifierIntents {
+
+    /** 「おかえり」通知が載せる `walk_session.id`（`Long`）。 */
+    const val EXTRA_REVIEW_SESSION_ID: String = "com.walkingrpg.extra.REVIEW_SESSION_ID"
 }

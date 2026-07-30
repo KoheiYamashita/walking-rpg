@@ -42,4 +42,14 @@ interface WalkSessionRepository {
 
     /** 指定セッション（存在しなければnull）。 */
     suspend fun session(sessionId: Long): WalkSession?
+
+    /**
+     * 終了済みのセッションを新しい順に [limit] 件まで返す。
+     *
+     * 「帰宅直後に効くもの」を作る側（振り返りの一言の生成キュー＝
+     * `GenerateWalkReviewRemarkUseCase`）の入口。[observeSessions] と分けているのは、
+     * あちらが画面用に全件＋サンプル数を流すのに対し、こちらは
+     * **課金する処理の対象を直近だけに絞る**ためのものだから。
+     */
+    suspend fun recentFinishedSessions(limit: Int): List<WalkSession>
 }

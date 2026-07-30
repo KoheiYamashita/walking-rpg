@@ -9,6 +9,8 @@ package com.walkingrpg.shared.platform
  * ここで例外を投げると自動終了そのものを壊してしまう。
  */
 internal class IosWalkNotifier : WalkNotifier {
-    // TODO(#3): UNUserNotificationCenter でローカル通知を出す
-    override fun notifyHomecoming(durationMs: Long) = Unit
+    // TODO(#3): UNUserNotificationCenter でローカル通知を出す。
+    //  タップで振り返りを開く経路（Androidは MainActivity の extra →
+    //  RequestPendingReviewUseCase）も、そのときに userInfo で同じ形に揃える。
+    override fun notifyHomecoming(sessionId: Long, durationMs: Long) = Unit
 }
