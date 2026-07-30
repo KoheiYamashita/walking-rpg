@@ -17,13 +17,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.backhandler.BackHandler
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.walkingrpg.app.ui.KeepScreenOn
+import com.walkingrpg.app.ui.codex.CodexScreen
 import com.walkingrpg.app.ui.home.HomeScreen
 import com.walkingrpg.app.ui.map.MapScreen
 import com.walkingrpg.app.ui.setup.SetupScreen
 import org.koin.compose.viewmodel.koinViewModel
 
 /** 画面。ナビゲーションライブラリは画面が増えた時点で導入する。 */
-private enum class Screen { Home, Map }
+private enum class Screen { Home, Map, Codex }
 
 /**
  * アプリのルートComposable。
@@ -84,7 +85,13 @@ private fun MainNavigation() {
     BackHandler(enabled = screen != Screen.Home) { screen = Screen.Home }
 
     when (screen) {
-        Screen.Home -> HomeScreen(onOpenMap = { screen = Screen.Map })
+        Screen.Home -> HomeScreen(
+            onOpenMap = { screen = Screen.Map },
+            onOpenCodex = { screen = Screen.Codex },
+        )
+
         Screen.Map -> MapScreen(onBack = { screen = Screen.Home })
+        // 図鑑の中の一覧⇄詳細は CodexScreen 自身が持つ（BackHandler はここの1階層しか見ない）
+        Screen.Codex -> CodexScreen(onBack = { screen = Screen.Home })
     }
 }

@@ -1,6 +1,7 @@
 package com.walkingrpg.app.di
 
 import com.walkingrpg.app.AppViewModel
+import com.walkingrpg.app.ui.codex.CodexViewModel
 import com.walkingrpg.app.ui.home.HomeViewModel
 import com.walkingrpg.app.ui.map.MapViewModel
 import com.walkingrpg.app.ui.setup.SetupViewModel
@@ -19,6 +20,7 @@ val appModule = module {
     viewModelOf(::AppViewModel)
     viewModelOf(::HomeViewModel)
     viewModelOf(::MapViewModel)
+    viewModelOf(::CodexViewModel)
     viewModelOf(::SetupViewModel)
 }
 

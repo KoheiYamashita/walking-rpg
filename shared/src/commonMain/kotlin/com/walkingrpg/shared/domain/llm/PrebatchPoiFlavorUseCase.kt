@@ -151,8 +151,11 @@ internal fun LlmRequest.promptHash(): String = PromptHash.of(systemPrompt, userP
  *
  * `when` で全分岐を書くのは、失敗の種類が増えたときに
  * 「打ち切るのか続けるのか」を決め忘れないようにするため。
+ *
+ * 種別の違う事前バッチ（[PrebatchSpeciesDescriptionUseCase]）でも判断は同じなので共有する。
+ * ここが分かれると「地点は諦めたのに図鑑は投げ続ける」という半端な挙動が生まれる。
  */
-private fun LlmFailureKind.stopsBatch(): Boolean = when (this) {
+internal fun LlmFailureKind.stopsBatch(): Boolean = when (this) {
     // 設定・通信の問題。次の地点でも同じ結果になる
     LlmFailureKind.NOT_CONFIGURED,
     LlmFailureKind.UNAUTHORIZED,

@@ -6,18 +6,21 @@ package com.walkingrpg.shared.domain.llm
  * @param maxGenerationsPerRun ドレイン1回で投げるリクエストの上限。
  * @param maxFailuresPerRun 1回のドレインで許す失敗の回数（下記「打ち切りの二段構え」）。
  * @param poiFlavorMaxTokens 地点フレーバー1件の出力上限トークン数。
+ * @param speciesDescriptionMaxTokens 図鑑の記述文1件の出力上限トークン数。
  * @param requireUnmeteredNetwork 従量課金でない回線（Wi-Fi等）でしか事前バッチを走らせないか。
  */
 data class LlmGenerationConfig(
     val maxGenerationsPerRun: Int = DEFAULT_MAX_GENERATIONS_PER_RUN,
     val maxFailuresPerRun: Int = DEFAULT_MAX_FAILURES_PER_RUN,
     val poiFlavorMaxTokens: Int = DEFAULT_POI_FLAVOR_MAX_TOKENS,
+    val speciesDescriptionMaxTokens: Int = DEFAULT_SPECIES_DESCRIPTION_MAX_TOKENS,
     val requireUnmeteredNetwork: Boolean = true,
 ) {
     init {
         require(maxGenerationsPerRun > 0) { "maxGenerationsPerRun は正の値" }
         require(maxFailuresPerRun > 0) { "maxFailuresPerRun は正の値" }
         require(poiFlavorMaxTokens > 0) { "poiFlavorMaxTokens は正の値" }
+        require(speciesDescriptionMaxTokens > 0) { "speciesDescriptionMaxTokens は正の値" }
     }
 
     companion object {
@@ -54,6 +57,15 @@ data class LlmGenerationConfig(
          * （足りないと途中で切れて [PoiFlavorResponseParser] が読めなくなる）。
          */
         const val DEFAULT_POI_FLAVOR_MAX_TOKENS: Int = 300
+
+        /**
+         * 図鑑の記述文の出力上限＝400トークン。
+         *
+         * 地点フレーバー（1〜2文）より長い2〜3文を出させるので、そのぶん上げてある。
+         * 種は手書きのカタログで有限（十数件）なので、1件あたりを少し贅沢にしても
+         * 総額は地点フレーバー（数百件）に比べて無視できる。
+         */
+        const val DEFAULT_SPECIES_DESCRIPTION_MAX_TOKENS: Int = 400
 
         /** 既定値。差し替えはDI（`sharedModule`）で行う。UIからは触らせない。 */
         val DEFAULT: LlmGenerationConfig = LlmGenerationConfig()

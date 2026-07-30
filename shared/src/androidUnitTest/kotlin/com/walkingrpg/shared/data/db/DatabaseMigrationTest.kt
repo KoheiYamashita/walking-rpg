@@ -4,12 +4,15 @@ import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.walkingrpg.shared.data.WalkSessionRepositoryImpl
+import com.walkingrpg.shared.data.codex.CodexProgressRepositoryImpl
 import com.walkingrpg.shared.data.growth.WayGrowthRepositoryImpl
 import com.walkingrpg.shared.data.llm.LlmCacheRepositoryImpl
 import com.walkingrpg.shared.data.matching.PassageRepositoryImpl
 import com.walkingrpg.shared.data.osm.OsmMasterRepositoryImpl
 import com.walkingrpg.shared.data.steps.StepImportRepositoryImpl
 import com.walkingrpg.shared.data.weather.SessionWeatherRepositoryImpl
+import com.walkingrpg.shared.domain.codex.CodexProgress
+import com.walkingrpg.shared.domain.codex.ForeshadowStage
 import com.walkingrpg.shared.domain.growth.GrowthStage
 import com.walkingrpg.shared.domain.llm.LlmCacheEntry
 import com.walkingrpg.shared.domain.llm.LlmTaskKind
@@ -108,6 +111,7 @@ class DatabaseMigrationTest {
         assertEquals(WalkingRpgDatabase.Schema.version, driver.userVersion())
         assertEquals(
             listOf(
+                "codex_progress",
                 "llm_cache",
                 "location_sample",
                 "passage",
@@ -120,7 +124,7 @@ class DatabaseMigrationTest {
             ),
             driver.tableNames(),
             "way / poi / passage / way_growth（1.sqm）・step_import（2.sqm）・" +
-                "session_weather（3.sqm）・llm_cache（4.sqm）が足される",
+                "session_weather（3.sqm）・llm_cache（4.sqm）・codex_progress（5.sqm）が足される",
         )
     }
 
@@ -211,6 +215,29 @@ class DatabaseMigrationTest {
             ),
         )
         assertEquals("木陰が涼しい。", flavors.entry(cacheKey)?.text)
+
+        // 図鑑の進捗（5.sqm で足した codex_progress）。
+        // 更新しただけの端末でも0件から始まり、再計算で書き込める。
+        // 過去の passage から引き直すので、更新前に歩いたぶんの図鑑も発見時刻ごと復活する
+        val codex = CodexProgressRepositoryImpl(database)
+        assertTrue(codex.progresses().isEmpty(), "更新直後は1件も進捗が無い")
+        codex.replaceAllProgresses(
+            listOf(
+                CodexProgress(
+                    speciesId = "water_kingfisher",
+                    visitCount = 10,
+                    foreshadowStage = ForeshadowStage.NONE,
+                    discoveredAtMs = SyntheticWalk.START_MS,
+                ),
+                CodexProgress(
+                    speciesId = "park_turtle_dove",
+                    visitCount = 1,
+                    foreshadowStage = ForeshadowStage.NEAR,
+                ),
+            ),
+        )
+        assertEquals(SyntheticWalk.START_MS, codex.progress("water_kingfisher")?.discoveredAtMs)
+        assertNull(codex.progress("park_turtle_dove")?.discoveredAtMs, "未発見は NULL のまま往復する")
     }
 
     @Test
@@ -230,6 +257,7 @@ class DatabaseMigrationTest {
 
         assertEquals(
             listOf(
+                "codex_progress",
                 "llm_cache",
                 "location_sample",
                 "passage",

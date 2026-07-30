@@ -2,9 +2,12 @@ package com.walkingrpg.shared.data.growth
 
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.walkingrpg.shared.data.WalkSessionRepositoryImpl
+import com.walkingrpg.shared.data.codex.CodexProgressRepositoryImpl
+import com.walkingrpg.shared.data.codex.InMemoryRecentCodexRepository
 import com.walkingrpg.shared.data.db.WalkingRpgDatabase
 import com.walkingrpg.shared.data.matching.PassageRepositoryImpl
 import com.walkingrpg.shared.data.osm.OsmMasterRepositoryImpl
+import com.walkingrpg.shared.domain.codex.RecomputeCodexProgressUseCase
 import com.walkingrpg.shared.domain.growth.GrowthConfig
 import com.walkingrpg.shared.domain.growth.GrowthStage
 import com.walkingrpg.shared.domain.growth.RecomputeAfterWalkUseCase
@@ -43,6 +46,8 @@ class RecomputeWayGrowthTest {
         val passages = PassageRepositoryImpl(database)
         val growths = WayGrowthRepositoryImpl(database)
         val recentGrowth = InMemoryRecentGrowthRepository()
+        val codex = CodexProgressRepositoryImpl(database)
+        val recentCodex = InMemoryRecentCodexRepository()
 
         val recomputeGrowth = RecomputeWayGrowthUseCase(
             passageRepository = passages,
@@ -58,8 +63,15 @@ class RecomputeWayGrowthTest {
                 config = config,
             ),
             recomputeWayGrowth = recomputeGrowth,
+            recomputeCodexProgress = RecomputeCodexProgressUseCase(
+                passageRepository = passages,
+                osmMasterRepository = master,
+                codexProgressRepository = codex,
+            ),
             wayGrowthRepository = growths,
+            codexProgressRepository = codex,
             recentGrowthRepository = recentGrowth,
+            recentCodexRepository = recentCodex,
         )
     }
 

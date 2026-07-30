@@ -1,11 +1,15 @@
 package com.walkingrpg.shared.domain
 
+import com.walkingrpg.shared.domain.codex.CodexProgress
+import com.walkingrpg.shared.domain.codex.CodexProgressRepository
+import com.walkingrpg.shared.domain.codex.RecentCodexRepository
 import com.walkingrpg.shared.domain.growth.RecentGrowthRepository
 import com.walkingrpg.shared.domain.growth.WayGrowth
 import com.walkingrpg.shared.domain.growth.WayGrowthRepository
 import com.walkingrpg.shared.domain.map.GeoPoint
 import com.walkingrpg.shared.domain.matching.Passage
 import com.walkingrpg.shared.domain.matching.PassageRepository
+import com.walkingrpg.shared.domain.matching.SessionVisit
 import com.walkingrpg.shared.domain.osm.OsmMasterCounts
 import com.walkingrpg.shared.domain.osm.OsmMasterRepository
 import com.walkingrpg.shared.domain.osm.Poi
@@ -32,18 +36,20 @@ internal class FakeCurrentLocationRepository(
 
 internal class FakeOsmMasterRepository(
     private var ways: List<Way> = emptyList(),
+    private var pois: List<Poi> = emptyList(),
 ) : OsmMasterRepository {
 
     override suspend fun save(ways: List<Way>, pois: List<Poi>) {
         this.ways = ways
+        this.pois = pois
     }
 
     override suspend fun counts(): OsmMasterCounts =
-        OsmMasterCounts(wayCount = ways.size, poiCount = 0)
+        OsmMasterCounts(wayCount = ways.size, poiCount = pois.size)
 
     override suspend fun ways(): List<Way> = ways
 
-    override suspend fun pois(): List<Poi> = emptyList()
+    override suspend fun pois(): List<Poi> = pois
 }
 
 internal class FakeWayGrowthRepository(
@@ -73,6 +79,8 @@ internal class FakeWayGrowthRepository(
  */
 internal class FakePassageRepository(
     var passCounts: Map<Long, Int> = emptyMap(),
+    /** 図鑑側の材料（道 → その道を通った散歩）。置かなければ「まだ誰も歩いていない」。 */
+    var sessionVisits: Map<Long, List<SessionVisit>> = emptyMap(),
 ) : PassageRepository {
 
     val replacedSessions = mutableListOf<Long>()
@@ -84,6 +92,60 @@ internal class FakePassageRepository(
     override suspend fun passages(sessionId: Long): List<Passage> = emptyList()
 
     override suspend fun passCountsByWay(): Map<Long, Int> = passCounts
+
+    override suspend fun sessionVisitsByWay(): Map<Long, List<SessionVisit>> = sessionVisits
+}
+
+/** 図鑑の進捗の差し替え。`way_growth` 側（[FakeWayGrowthRepository]）と同じ形。 */
+internal class FakeCodexProgressRepository(
+    progresses: List<CodexProgress> = emptyList(),
+) : CodexProgressRepository {
+
+    var progresses: List<CodexProgress> = progresses
+        private set
+
+    /** `replaceAllProgresses` が呼ばれた回数（全件の作り直しが1回だけ走ることの確認用）。 */
+    var replaceCount = 0
+        private set
+
+    override suspend fun replaceAllProgresses(progresses: List<CodexProgress>) {
+        this.progresses = progresses
+        replaceCount++
+    }
+
+    override suspend fun progresses(): List<CodexProgress> = progresses.sortedBy { it.speciesId }
+
+    override suspend fun progress(speciesId: String): CodexProgress? =
+        progresses.firstOrNull { it.speciesId == speciesId }
+}
+
+internal class FakeRecentCodexRepository(
+    initial: Set<String> = emptySet(),
+) : RecentCodexRepository {
+
+    private val _updates = MutableSharedFlow<Set<String>>(
+        replay = 1,
+        extraBufferCapacity = 8,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+
+    override var discoveredSpeciesIds: Set<String> = initial
+        private set
+
+    override val updates: Flow<Set<String>> = _updates.asSharedFlow()
+
+    /** `record` に渡された履歴（0件でも記録されることを見たいので列で持つ）。 */
+    val recorded = mutableListOf<Set<String>>()
+
+    init {
+        _updates.tryEmit(initial)
+    }
+
+    override fun record(speciesIds: Set<String>) {
+        recorded += speciesIds
+        discoveredSpeciesIds = speciesIds
+        _updates.tryEmit(speciesIds)
+    }
 }
 
 internal class FakeRecentGrowthRepository(

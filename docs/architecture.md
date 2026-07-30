@@ -95,8 +95,17 @@ iosApp/       # iOSエントリポイント
 
 ### 導出（キャッシュ。いつでも捨てて再計算できる）
 
-- `way_growth(way_id, pass_count, stage, branch_attr)`
-- `codex_progress(species_id, visit_count, foreshadow_stage, discovered_at?)`
+- `way_growth(way_id, pass_count, stage, branch_attr)` — `pass_count` は**通過ごと**に数える
+  （design.md §4.1）
+- `codex_progress(species_id, visit_count, foreshadow_stage, discovered_at?)` —
+  `visit_count` は**セッション単位**で数える（design.md §4.4「同じ川に10回通って」＝10回の散歩)。
+  正確には「その種のカテゴリに属するPOIのうち、いちばん通ったPOIの近傍を1本以上通った散歩の数」。
+  カテゴリ内で合算せずPOI単位の最大値を採るのは、合算にすると「近所の公園を1回ずつ」でも
+  「同じ公園に通い詰め」でも同じ数になり、design.md §4.4 の中核メカニクスが消えるため。
+  POIとwayの対応（空間結合）はテーブルに持たず**毎回その場で計算する**
+  （POI数百件 × way約220本の純計算。`poi` / `way` はマスタ再取り込みで作り直されるので、
+  対応表を持つと古いIDを指した行が残る）。`discovered_at` は端末時計ではなく
+  **閾値に到達したセッションの `passage.ts`** から導く（読んだ瞬間に導出が冪等でなくなる）
 
 ### シナリオ・謎
 

@@ -8,6 +8,8 @@ import com.walkingrpg.shared.data.WalkRecorderImpl
 import com.walkingrpg.shared.data.WalkSessionExporterImpl
 import com.walkingrpg.shared.data.SetupRepositoryImpl
 import com.walkingrpg.shared.data.WalkSessionRepositoryImpl
+import com.walkingrpg.shared.data.codex.CodexProgressRepositoryImpl
+import com.walkingrpg.shared.data.codex.InMemoryRecentCodexRepository
 import com.walkingrpg.shared.data.createDatabase
 import com.walkingrpg.shared.data.feedback.InMemoryWalkEventBus
 import com.walkingrpg.shared.data.feedback.WalkFeedbackImpl
@@ -35,6 +37,12 @@ import com.walkingrpg.shared.data.weather.weatherHttpClient
 import com.walkingrpg.shared.domain.Clock
 import com.walkingrpg.shared.domain.GetPlatformNameUseCase
 import com.walkingrpg.shared.domain.SystemInfoRepository
+import com.walkingrpg.shared.domain.codex.CodexConfig
+import com.walkingrpg.shared.domain.codex.CodexProgressRepository
+import com.walkingrpg.shared.domain.codex.GetCodexUseCase
+import com.walkingrpg.shared.domain.codex.ObserveCodexUpdatesUseCase
+import com.walkingrpg.shared.domain.codex.RecentCodexRepository
+import com.walkingrpg.shared.domain.codex.RecomputeCodexProgressUseCase
 import com.walkingrpg.shared.domain.feedback.ObserveWalkEventsUseCase
 import com.walkingrpg.shared.domain.feedback.WalkEventBus
 import com.walkingrpg.shared.domain.feedback.WalkFeedback
@@ -47,11 +55,13 @@ import com.walkingrpg.shared.domain.growth.RecomputeWayGrowthUseCase
 import com.walkingrpg.shared.domain.growth.WayGrowthRepository
 import com.walkingrpg.shared.domain.llm.DrainLlmGenerationQueueUseCase
 import com.walkingrpg.shared.domain.llm.GetPoiFlavorUseCase
+import com.walkingrpg.shared.domain.llm.GetSpeciesDescriptionUseCase
 import com.walkingrpg.shared.domain.llm.LlmCacheRepository
 import com.walkingrpg.shared.domain.llm.LlmClientSelector
 import com.walkingrpg.shared.domain.llm.LlmGenerationConfig
 import com.walkingrpg.shared.domain.llm.LlmGenerationQueue
 import com.walkingrpg.shared.domain.llm.PrebatchPoiFlavorUseCase
+import com.walkingrpg.shared.domain.llm.PrebatchSpeciesDescriptionUseCase
 import com.walkingrpg.shared.domain.map.GetMapSceneUseCase
 import com.walkingrpg.shared.domain.matching.MapMatchingConfig
 import com.walkingrpg.shared.domain.matching.PassageRepository
@@ -118,6 +128,15 @@ private val OSM_HTTP_CLIENT = named("osmHttpClient")
  * リトライ方針・タイムアウトはOSM取り込み・天候とは違うので分けてある（`llmHttpClient`）。
  */
 private val LLM_HTTP_CLIENT = named("llmHttpClient")
+
+/**
+ * 地点フレーバーの生成キュー（issue #14）。
+ * [LlmGenerationQueue] の実装が2本になったので、注入先で取り違えないよう修飾子で分ける。
+ */
+private val POI_FLAVOR_QUEUE = named("poiFlavorQueue")
+
+/** 図鑑の記述文の生成キュー（issue #13）。 */
+private val SPECIES_DESCRIPTION_QUEUE = named("speciesDescriptionQueue")
 
 /**
  * 天候取得用のHTTPクライアント（issue #11）。
@@ -208,6 +227,28 @@ val sharedModule = module {
     // セッション終了イベントとの結線は AppViewModel（#10）。
     factoryOf(::RecomputeAfterWalkUseCase)
 
+    // --- 図鑑システム（issue #13） ---
+    // 近接半径・予兆の先行回数（CodexConfig）はここで差し替えられる。UIからは触らせない。
+    // codex_progress は way_growth と同じく捨てて作り直せる導出キャッシュなので、
+    // 差し替えたら RecomputeCodexProgressUseCase を流せばよい。
+    // 種の閾値そのものは手書きのカタログ（SpeciesCatalog）側にある。
+    single { CodexConfig.DEFAULT }
+    single<CodexProgressRepository> { CodexProgressRepositoryImpl(get()) }
+    factoryOf(::RecomputeCodexProgressUseCase)
+    // 「今回の散歩で出た種」は永続化しない（RecentCodexRepository のKDoc）。
+    // 書く側（再計算）と読む側（図鑑）が同じ1個を見る必要があるので single。
+    single<RecentCodexRepository> { InMemoryRecentCodexRepository() }
+    factoryOf(::ObserveCodexUpdatesUseCase)
+    // 種カタログは手書きの定数（SpeciesCatalog）なのでDIに載せない＝既定値を使う。
+    // factoryOf にすると Koin が List<Species> の定義を探して落ちる。
+    factory {
+        GetCodexUseCase(
+            codexProgressRepository = get(),
+            getSpeciesDescription = get(),
+            recentCodexRepository = get(),
+        )
+    }
+
     // --- 歩行中フィードバック（issue #12） ---
     // 振動の回数制限（WalkFeedbackConfig）はここで差し替えられる。UIからは触らせない。
     single { WalkFeedbackConfig.DEFAULT }
@@ -224,6 +265,7 @@ val sharedModule = module {
             haptics = get(),
             matchingConfig = get(),
             growthConfig = get(),
+            codexConfig = get(),
             feedbackConfig = get(),
         )
     }
@@ -266,9 +308,20 @@ val sharedModule = module {
     single<LlmClientSelector> { HttpLlmClientSelector(get(), get()) }
     single<LlmCacheRepository> { LlmCacheRepositoryImpl(get()) }
     // 生成キューは「未生成を数え直して作る」冪等なドレイン（LlmGenerationQueue のKDoc）。
-    single<LlmGenerationQueue> {
+    // 同じ型の実装が2本あるので named() で分ける（無修飾だと後から登録した方が黙って勝つ）。
+    single<LlmGenerationQueue>(POI_FLAVOR_QUEUE) {
         PrebatchPoiFlavorUseCase(
             osmMasterRepository = get(),
+            cacheRepository = get(),
+            setupRepository = get(),
+            clients = get(),
+            networkStatus = get(),
+            clock = get(),
+            config = get(),
+        )
+    }
+    single<LlmGenerationQueue>(SPECIES_DESCRIPTION_QUEUE) {
+        PrebatchSpeciesDescriptionUseCase(
             cacheRepository = get(),
             setupRepository = get(),
             clients = get(),
@@ -282,9 +335,15 @@ val sharedModule = module {
     // 同じ生成を二度投げないよう実行を Mutex で直列化しており、
     // その Mutex は全ての呼び出しで同じ1個でなければ意味がない
     // （DrainLlmGenerationQueueUseCase のKDoc「実行は直列」）。
-    singleOf(::DrainLlmGenerationQueueUseCase)
-    // 散歩中の読み出し（通信しない）。生成できていない地点は定型文で凌ぐ
+    single {
+        DrainLlmGenerationQueueUseCase(
+            speciesDescriptionQueue = get(SPECIES_DESCRIPTION_QUEUE),
+            poiFlavorQueue = get(POI_FLAVOR_QUEUE),
+        )
+    }
+    // 散歩中・図鑑の読み出し（通信しない）。生成できていないものは定型文で凌ぐ
     factoryOf(::GetPoiFlavorUseCase)
+    factoryOf(::GetSpeciesDescriptionUseCase)
 
     // --- 初回セットアップ（issue #6） ---
     // 秘密（APIキー・自宅座標）と非秘密（URL・モデル名・完了フラグ）の振り分けは

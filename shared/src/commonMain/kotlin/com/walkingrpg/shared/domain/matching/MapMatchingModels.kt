@@ -21,3 +21,19 @@ data class Passage(
     val wayId: Long,
     val timestampMs: Long,
 )
+
+/**
+ * 「ある道を、ある散歩で通った」1件（Passage.sq `selectSessionVisitsByWay` の1行）。
+ *
+ * [Passage] との違いは**セッション単位で畳んである**こと。同じ散歩で同じ道を3回通っても
+ * [Passage] は3件だが、こちらは1件になる。図鑑の訪問回数は「何回通ったか」ではなく
+ * 「何回の散歩でそこへ行ったか」なので、この形で数える
+ * （[com.walkingrpg.shared.domain.codex.CodexProgressCalculator] のKDoc「訪問回数の定義」）。
+ *
+ * @param firstTimestampMs その散歩でその道を最初に通った時刻。発見時刻（`discovered_at`）を
+ *  端末時計ではなく歩行ログから引くための材料（同上のKDoc「発見時刻」）。
+ */
+data class SessionVisit(
+    val sessionId: Long,
+    val firstTimestampMs: Long,
+)

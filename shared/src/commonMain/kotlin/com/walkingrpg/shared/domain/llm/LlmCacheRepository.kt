@@ -76,3 +76,11 @@ fun llmCacheKey(kind: LlmTaskKind, logicalKey: String): String = "${kind.name}:$
 
 /** 地点フレーバーの論理キー。POIのIDはOSMの種別込み（`node/123`）なので、そのまま使える。 */
 fun poiFlavorLogicalKey(poiId: String): String = "poi:$poiId"
+
+/**
+ * 図鑑の記述文の論理キー。
+ *
+ * 種のIDは手書きのカタログで決めた安定値（`Species.id`）なので、対象圏を取り直しても
+ * OSMのIDが変わっても影響を受けない＝生成済みの記述文は一度作れば効き続ける。
+ */
+fun speciesDescriptionLogicalKey(speciesId: String): String = "species:$speciesId"
