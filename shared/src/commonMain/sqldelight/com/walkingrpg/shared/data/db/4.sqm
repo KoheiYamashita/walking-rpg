@@ -1,0 +1,21 @@
+-- v4 → v5：LLM生成テキストのキャッシュ llm_cache を足す（issue #14）。
+--
+-- v4 の端末は 1.sqm〜3.sqm を流し終えた状態なので、ここでも中身はバージョンで確定する。
+-- 1.sqm のような IF NOT EXISTS は書かない（あれはスパイク期の後始末。
+-- 付けると「作られなかった」事故が黙って通る）。
+--
+-- 既存の端末では行が0件＝全地点が未生成として扱われるので、更新後の最初のドレイン
+-- （DrainLlmGenerationQueueUseCase）がWi-Fi時に順次埋める。ここで値を入れる必要はない。
+--
+-- 中身は LlmCache.sq の CREATE 文と1文字単位で揃えること。ズレると
+-- verifyMigrations（shared/build.gradle.kts）がビルドで落とす。
+
+CREATE TABLE llm_cache (
+    cache_key   TEXT NOT NULL PRIMARY KEY, -- 「kind:論理キー」
+    kind        TEXT NOT NULL,             -- LlmTaskKind の name（POI_FLAVOR ...）
+    prompt_hash TEXT NOT NULL,             -- PromptHash（FNV-1a 64bitの16進16桁）
+    text        TEXT NOT NULL,             -- 生成された本文
+    created_at  INTEGER NOT NULL           -- epoch millis（この行を書いた時刻）
+);
+
+CREATE INDEX llm_cache_kind ON llm_cache(kind);

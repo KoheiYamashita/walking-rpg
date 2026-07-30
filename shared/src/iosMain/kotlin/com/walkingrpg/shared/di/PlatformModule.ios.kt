@@ -1,5 +1,6 @@
 package com.walkingrpg.shared.di
 
+import com.walkingrpg.shared.domain.llm.NetworkStatus
 import com.walkingrpg.shared.domain.steps.DailyStepsSource
 import com.walkingrpg.shared.platform.AppSettings
 import com.walkingrpg.shared.platform.DatabaseDriverFactory
@@ -12,6 +13,7 @@ import com.walkingrpg.shared.platform.IosHaptics
 import com.walkingrpg.shared.platform.IosFileShare
 import com.walkingrpg.shared.platform.IosLocationPermissionController
 import com.walkingrpg.shared.platform.IosLocationProvider
+import com.walkingrpg.shared.platform.IosNetworkStatus
 import com.walkingrpg.shared.platform.IosSecureStorage
 import com.walkingrpg.shared.platform.IosSessionKeeper
 import com.walkingrpg.shared.platform.IosWalkNotifier
@@ -42,6 +44,9 @@ actual val platformModule: Module = module {
     // --- 押し忘れ救済（issue #7） ---
     // HealthKit は後続issue。今は常に「取れなかった」を返す
     single<DailyStepsSource> { IosDailyStepsSource() }
+
+    // --- LLM生成基盤（issue #14）。実装は #3 で NWPathMonitor に差し替える ---
+    single<NetworkStatus> { IosNetworkStatus() }
 
     // --- 設定・キー保管（issue #6） ---
     single<SecureStorage> { IosSecureStorage() }

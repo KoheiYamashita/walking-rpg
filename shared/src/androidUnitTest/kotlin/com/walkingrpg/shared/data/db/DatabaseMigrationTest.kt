@@ -5,11 +5,16 @@ import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.walkingrpg.shared.data.WalkSessionRepositoryImpl
 import com.walkingrpg.shared.data.growth.WayGrowthRepositoryImpl
+import com.walkingrpg.shared.data.llm.LlmCacheRepositoryImpl
 import com.walkingrpg.shared.data.matching.PassageRepositoryImpl
 import com.walkingrpg.shared.data.osm.OsmMasterRepositoryImpl
 import com.walkingrpg.shared.data.steps.StepImportRepositoryImpl
 import com.walkingrpg.shared.data.weather.SessionWeatherRepositoryImpl
 import com.walkingrpg.shared.domain.growth.GrowthStage
+import com.walkingrpg.shared.domain.llm.LlmCacheEntry
+import com.walkingrpg.shared.domain.llm.LlmTaskKind
+import com.walkingrpg.shared.domain.llm.llmCacheKey
+import com.walkingrpg.shared.domain.llm.poiFlavorLogicalKey
 import com.walkingrpg.shared.domain.growth.WayGrowth
 import com.walkingrpg.shared.domain.matching.Passage
 import com.walkingrpg.shared.domain.matching.SyntheticWalk
@@ -22,6 +27,7 @@ import kotlinx.coroutines.test.runTest
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -102,6 +108,7 @@ class DatabaseMigrationTest {
         assertEquals(WalkingRpgDatabase.Schema.version, driver.userVersion())
         assertEquals(
             listOf(
+                "llm_cache",
                 "location_sample",
                 "passage",
                 "poi",
@@ -113,7 +120,7 @@ class DatabaseMigrationTest {
             ),
             driver.tableNames(),
             "way / poi / passage / way_growth（1.sqm）・step_import（2.sqm）・" +
-                "session_weather（3.sqm）が足される",
+                "session_weather（3.sqm）・llm_cache（4.sqm）が足される",
         )
     }
 
@@ -188,6 +195,22 @@ class DatabaseMigrationTest {
         )
         assertEquals(WeatherCondition.RAIN, weathers.weather(sessionId)?.condition)
         assertEquals(emptyList(), weathers.sessionIdsWithoutWeather())
+
+        // LLM生成テキストのキャッシュ（4.sqm で足した llm_cache）。
+        // 更新しただけの端末でも、未生成として拾えて書き込める
+        val flavors = LlmCacheRepositoryImpl(database)
+        val cacheKey = llmCacheKey(LlmTaskKind.POI_FLAVOR, poiFlavorLogicalKey("node/1"))
+        assertNull(flavors.entry(cacheKey), "更新直後は1件も生成されていない")
+        flavors.save(
+            LlmCacheEntry(
+                cacheKey = cacheKey,
+                kind = LlmTaskKind.POI_FLAVOR,
+                promptHash = "0123456789abcdef",
+                text = "木陰が涼しい。",
+                createdAtMs = SyntheticWalk.START_MS + 180_000L,
+            ),
+        )
+        assertEquals("木陰が涼しい。", flavors.entry(cacheKey)?.text)
     }
 
     @Test
@@ -207,6 +230,7 @@ class DatabaseMigrationTest {
 
         assertEquals(
             listOf(
+                "llm_cache",
                 "location_sample",
                 "passage",
                 "poi",

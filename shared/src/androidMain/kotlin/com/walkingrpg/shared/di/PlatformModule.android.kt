@@ -5,12 +5,14 @@ import com.walkingrpg.shared.platform.AndroidDatabaseDriverFactory
 import com.walkingrpg.shared.platform.AndroidFileShare
 import com.walkingrpg.shared.platform.AndroidLocationPermissionController
 import com.walkingrpg.shared.platform.AndroidLocationProvider
+import com.walkingrpg.shared.platform.AndroidNetworkStatus
 import com.walkingrpg.shared.platform.AndroidSecureStorage
 import com.walkingrpg.shared.platform.AndroidSessionKeeper
 import com.walkingrpg.shared.platform.AndroidWalkNotifier
 import com.walkingrpg.shared.platform.AppSettings
 import com.walkingrpg.shared.platform.AndroidHaptics
 import com.walkingrpg.shared.platform.Haptics
+import com.walkingrpg.shared.domain.llm.NetworkStatus
 import com.walkingrpg.shared.domain.steps.DailyStepsSource
 import com.walkingrpg.shared.platform.DatabaseDriverFactory
 import com.walkingrpg.shared.platform.FileShare
@@ -46,6 +48,9 @@ actual val platformModule: Module = module {
 
     // --- 押し忘れ救済（issue #7） ---
     single<DailyStepsSource> { HealthConnectDailyStepsSource(androidContext()) }
+
+    // --- LLM生成基盤（issue #14） ---
+    single<NetworkStatus> { AndroidNetworkStatus(androidContext()) }
 
     // --- 設定・キー保管（issue #6） ---
     single<SecureStorage> { AndroidSecureStorage(androidContext()) }

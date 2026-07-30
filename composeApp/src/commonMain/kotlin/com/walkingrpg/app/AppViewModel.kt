@@ -3,6 +3,7 @@ package com.walkingrpg.app
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.walkingrpg.shared.domain.growth.RecomputeAfterWalkUseCase
+import com.walkingrpg.shared.domain.llm.DrainLlmGenerationQueueUseCase
 import com.walkingrpg.shared.domain.setup.IsSetupCompletedUseCase
 import com.walkingrpg.shared.domain.walk.ObserveFinishedWalksUseCase
 import com.walkingrpg.shared.domain.walk.ObserveIsWalkingUseCase
@@ -18,8 +19,8 @@ import kotlinx.coroutines.launch
 /**
  * 画面をまたいで効く「アプリ全体の状態」を持つViewModel。
  *
- * 用途は4つ：記録中の画面ON維持、初回セットアップのゲート、散歩が終わったときの
- * 導出の作り直し、そして天候の後付け取得。どれも画面の切り替えとは無関係な
+ * 用途は5つ：記録中の画面ON維持、初回セットアップのゲート、散歩が終わったときの
+ * 導出の作り直し、天候の後付け取得、そしてLLM生成のドレイン。どれも画面の切り替えとは無関係な
  * アプリ全体の関心事なので、各画面のViewModelに配らずここ1箇所で持つ
  * （二重管理を避ける。architecture.md §2 の役割規約どおりUseCaseしか知らない）。
  */
@@ -29,6 +30,7 @@ class AppViewModel(
     private val observeFinishedWalks: ObserveFinishedWalksUseCase,
     private val recomputeAfterWalk: RecomputeAfterWalkUseCase,
     private val fetchMissingSessionWeather: FetchMissingSessionWeatherUseCase,
+    private val drainLlmGenerationQueue: DrainLlmGenerationQueueUseCase,
 ) : ViewModel() {
 
     /** 記録中は画面を消させない（design.md §3「画面はONのまま携行するのが基本」）。 */
@@ -69,6 +71,19 @@ class AppViewModel(
      */
     val weatherError: StateFlow<String?> = _weatherError.asStateFlow()
 
+    private val _llmGenerationError = MutableStateFlow<String?>(null)
+
+    /**
+     * 直近のLLM生成が失敗した理由（成功したら `null`）。
+     *
+     * [recomputeError] / [weatherError] と同じ扱い：まだ画面には出していないが、
+     * 「何も起きなかったように見える」のを避けるために状態としては残す。
+     * 生成できていない地点は定型文で成立する（design.md §7）ので、
+     * 失敗しても散歩は始められる。
+     * TODO(#20 設定画面): デバッグ表示の置き場ができたらそこに出す。
+     */
+    val llmGenerationError: StateFlow<String?> = _llmGenerationError.asStateFlow()
+
     init {
         viewModelScope.launch {
             _setupGate.value =
@@ -76,7 +91,12 @@ class AppViewModel(
         }
         // 起動時のリトライ（design.md §9「失敗時は次回起動時リトライ」）。
         // 圏外で終わった散歩・アプリを閉じたまま日が変わった散歩の天候は、ここで埋まる。
-        viewModelScope.launch { fetchSessionWeather() }
+        // 続けてLLMの事前生成も回す：家に居る＝Wi-Fiの見込みが高く、
+        // 次の散歩までに地点フレーバーを揃えておける（design.md §7「路上で待たせたら負け」）。
+        viewModelScope.launch {
+            fetchSessionWeather()
+            drainLlmGeneration()
+        }
         // 散歩が終わったら passage → way_growth を作り直す（architecture.md §5「帰宅後」）。
         // 画面ではなくここに置くのは、地図を開いていなくても・ホームに居なくても
         // 走らなければならないから。畳み方（手動・自宅到着・測位エラー）の区別は
@@ -89,6 +109,9 @@ class AppViewModel(
                 // 起動時の取得と同じ1本を呼ぶだけ＝終わったばかりの散歩が
                 // 「未取得の1件」として拾われる。
                 fetchSessionWeather()
+                // 文章の生成は最後。数値（ローカル計算）→天候→文章の順で、
+                // 遅れてよいものを後ろに置く（architecture.md §5）。
+                drainLlmGeneration()
             }
         }
     }
@@ -138,6 +161,28 @@ class AppViewModel(
             throw cancellation
         } catch (error: Throwable) {
             _weatherError.value = error.message ?: "天候の取得に失敗しました"
+        }
+    }
+
+    /**
+     * 未生成のテキストをまとめて作る（architecture.md §5「LLM生成キューへ投入」）。
+     *
+     * 例外を外に投げないのは [recompute] / [fetchSessionWeather] と同じ理由
+     * （`collect` の中で投げると購読ごと終わる）。1件ぶんの生成失敗は
+     * `DrainLlmGenerationQueueUseCase` が中で受けて保存せずに返すので、
+     * ここで捕まるのは設定・DBの読み書きが壊れたときだけ。
+     *
+     * 生成できなかった地点が残っていること自体はエラーにしない：従量回線・未設定・圏外で
+     * 見送るのは正常な流れで、その地点は定型文で成立する（design.md §7）。
+     */
+    private suspend fun drainLlmGeneration() {
+        try {
+            drainLlmGenerationQueue()
+            _llmGenerationError.value = null
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (error: Throwable) {
+            _llmGenerationError.value = error.message ?: "文章の生成に失敗しました"
         }
     }
 }
