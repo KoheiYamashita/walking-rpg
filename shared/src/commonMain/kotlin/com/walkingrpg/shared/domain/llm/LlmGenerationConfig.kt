@@ -7,20 +7,30 @@ package com.walkingrpg.shared.domain.llm
  * @param maxFailuresPerRun 1回のドレインで許す失敗の回数（下記「打ち切りの二段構え」）。
  * @param poiFlavorMaxTokens 地点フレーバー1件の出力上限トークン数。
  * @param speciesDescriptionMaxTokens 図鑑の記述文1件の出力上限トークン数。
- * @param requireUnmeteredNetwork 従量課金でない回線（Wi-Fi等）でしか事前バッチを走らせないか。
+ * @param walkReviewRemarkMaxTokens 振り返りの一言1件の出力上限トークン数。
+ * @param requireUnmeteredNetwork 従量課金でない回線（Wi-Fi等）でしか**事前バッチ**を
+ *  走らせないか。振り返りの一言はこの制限を受けない（下記
+ *  [requireUnmeteredNetworkForWalkReview]）。
+ * @param requireUnmeteredNetworkForWalkReview 振り返りの一言も従量回線で抑止するか。
+ * @param walkReviewSessionLimit 振り返りの一言を作る対象にする「直近の終了済みセッション」の件数。
  */
 data class LlmGenerationConfig(
     val maxGenerationsPerRun: Int = DEFAULT_MAX_GENERATIONS_PER_RUN,
     val maxFailuresPerRun: Int = DEFAULT_MAX_FAILURES_PER_RUN,
     val poiFlavorMaxTokens: Int = DEFAULT_POI_FLAVOR_MAX_TOKENS,
     val speciesDescriptionMaxTokens: Int = DEFAULT_SPECIES_DESCRIPTION_MAX_TOKENS,
+    val walkReviewRemarkMaxTokens: Int = DEFAULT_WALK_REVIEW_REMARK_MAX_TOKENS,
     val requireUnmeteredNetwork: Boolean = true,
+    val requireUnmeteredNetworkForWalkReview: Boolean = false,
+    val walkReviewSessionLimit: Int = DEFAULT_WALK_REVIEW_SESSION_LIMIT,
 ) {
     init {
         require(maxGenerationsPerRun > 0) { "maxGenerationsPerRun は正の値" }
         require(maxFailuresPerRun > 0) { "maxFailuresPerRun は正の値" }
         require(poiFlavorMaxTokens > 0) { "poiFlavorMaxTokens は正の値" }
         require(speciesDescriptionMaxTokens > 0) { "speciesDescriptionMaxTokens は正の値" }
+        require(walkReviewRemarkMaxTokens > 0) { "walkReviewRemarkMaxTokens は正の値" }
+        require(walkReviewSessionLimit > 0) { "walkReviewSessionLimit は正の値" }
     }
 
     companion object {
@@ -66,6 +76,26 @@ data class LlmGenerationConfig(
          * 総額は地点フレーバー（数百件）に比べて無視できる。
          */
         const val DEFAULT_SPECIES_DESCRIPTION_MAX_TOKENS: Int = 400
+
+        /**
+         * 振り返りの一言の出力上限＝400トークン。
+         *
+         * 図鑑の記述文と同じ2〜3文なので同じ値。1回の散歩につき1件しか投げないので、
+         * 総額は事前バッチ（数百件）に比べて無視できる。
+         */
+        const val DEFAULT_WALK_REVIEW_REMARK_MAX_TOKENS: Int = 400
+
+        /**
+         * 一言を作る対象にする直近セッション数＝3。
+         *
+         * **過去の散歩全部に生成しない**：一言は帰宅直後に読まれるもので、
+         * 半年前の散歩に今から文章を付けても誰も開かない（design.md §4.5 の
+         * 長期の振り返りは月次スナップショットの担当）。
+         *
+         * 1件（＝いま帰った散歩だけ）にしないのは、圏外で終えた散歩を次の機会に
+         * 拾い直せるようにするため。3件あれば「圏外で2回続けて散歩した」まで面倒を見られる。
+         */
+        const val DEFAULT_WALK_REVIEW_SESSION_LIMIT: Int = 3
 
         /** 既定値。差し替えはDI（`sharedModule`）で行う。UIからは触らせない。 */
         val DEFAULT: LlmGenerationConfig = LlmGenerationConfig()

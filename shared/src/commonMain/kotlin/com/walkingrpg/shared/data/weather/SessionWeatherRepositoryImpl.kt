@@ -1,11 +1,15 @@
 package com.walkingrpg.shared.data.weather
 
+import app.cash.sqldelight.coroutines.asFlow
+import app.cash.sqldelight.coroutines.mapToOneOrNull
 import com.walkingrpg.shared.data.db.WalkingRpgDatabase
 import com.walkingrpg.shared.domain.weather.SessionWeather
 import com.walkingrpg.shared.domain.weather.SessionWeatherRepository
 import com.walkingrpg.shared.domain.weather.WeatherCondition
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 
 /**
@@ -41,6 +45,23 @@ internal class SessionWeatherRepositoryImpl(
             )
         }
     }
+
+    // 購読は SQLDelight の coroutines 拡張に任せる（LlmCacheRepositoryImpl.observe と同じ手口）。
+    // 後付け取得が行を書いた瞬間に、開いたままの振り返りへ天候が1行増える。
+    override fun observe(sessionId: Long): Flow<SessionWeather?> =
+        weathers.selectSessionWeather(sessionId)
+            .asFlow()
+            .mapToOneOrNull(dispatcher)
+            .map { row ->
+                row?.let {
+                    SessionWeather(
+                        sessionId = it.session_id,
+                        condition = it.condition.toCondition(),
+                        temperatureCelsius = it.temperature,
+                        fetchedAtMs = it.fetched_at,
+                    )
+                }
+            }
 
     override suspend fun sessionIdsWithoutWeather(): List<Long> = withContext(dispatcher) {
         weathers.selectSessionIdsWithoutWeather().executeAsList()

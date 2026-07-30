@@ -11,17 +11,23 @@ import kotlin.test.assertEquals
  * 見たいのは3つ：
  * - **多重実行を防ぐ**（起動時の生成と散歩終了時の生成が重なっても、同じ生成を二度投げない）
  * - キューが投げてしまっても呼び出し側（帰宅後フロー）を巻き添えにしない
- * - **登録した全部のキューが流れる**（引数で受ける形にした理由がこれ。#13 で2本目が増えた）
+ * - **登録した全部のキューが流れる**（引数で受ける形にした理由がこれ。#13 で2本目、
+ *   #15 で3本目が増えた）
  */
 class DrainLlmGenerationQueueUseCaseTest {
 
     private fun useCase(
+        walkReviewRemarkQueue: LlmGenerationQueue = FakeLlmGenerationQueue(
+            taskKind = LlmTaskKind.WALK_REVIEW_REMARK,
+            outcome = LlmGenerationOutcome(LlmTaskKind.WALK_REVIEW_REMARK),
+        ),
         speciesDescriptionQueue: LlmGenerationQueue = FakeLlmGenerationQueue(
             taskKind = LlmTaskKind.SPECIES_DESCRIPTION,
             outcome = LlmGenerationOutcome(LlmTaskKind.SPECIES_DESCRIPTION),
         ),
         poiFlavorQueue: LlmGenerationQueue = FakeLlmGenerationQueue(),
     ) = DrainLlmGenerationQueueUseCase(
+        walkReviewRemarkQueue = walkReviewRemarkQueue,
         speciesDescriptionQueue = speciesDescriptionQueue,
         poiFlavorQueue = poiFlavorQueue,
     )
@@ -34,7 +40,7 @@ class DrainLlmGenerationQueueUseCaseTest {
 
         val result = useCase(poiFlavorQueue = queue).invoke()
 
-        assertEquals(2, result.outcomes.size)
+        assertEquals(3, result.outcomes.size)
         assertEquals(3, result.generatedCount)
         assertEquals(1, result.failedCount)
     }
@@ -43,6 +49,10 @@ class DrainLlmGenerationQueueUseCaseTest {
     fun 登録した全部のキューが流れる() = runTest {
         // 引数で受けるのは登録漏れをコンパイラとDI検証に見つけさせるため
         // （DrainLlmGenerationQueueUseCase のKDoc「キューの並び」）
+        val remark = FakeLlmGenerationQueue(
+            taskKind = LlmTaskKind.WALK_REVIEW_REMARK,
+            outcome = LlmGenerationOutcome(LlmTaskKind.WALK_REVIEW_REMARK, generated = 1),
+        )
         val species = FakeLlmGenerationQueue(
             taskKind = LlmTaskKind.SPECIES_DESCRIPTION,
             outcome = LlmGenerationOutcome(LlmTaskKind.SPECIES_DESCRIPTION, generated = 2),
@@ -51,15 +61,24 @@ class DrainLlmGenerationQueueUseCaseTest {
             outcome = LlmGenerationOutcome(LlmTaskKind.POI_FLAVOR, generated = 5),
         )
 
-        val result = useCase(speciesDescriptionQueue = species, poiFlavorQueue = flavor).invoke()
+        val result = useCase(
+            walkReviewRemarkQueue = remark,
+            speciesDescriptionQueue = species,
+            poiFlavorQueue = flavor,
+        ).invoke()
 
+        assertEquals(1, remark.drainCount)
         assertEquals(1, species.drainCount)
         assertEquals(1, flavor.drainCount)
-        assertEquals(7, result.generatedCount)
+        assertEquals(8, result.generatedCount)
         assertEquals(
-            listOf(LlmTaskKind.SPECIES_DESCRIPTION, LlmTaskKind.POI_FLAVOR),
+            listOf(
+                LlmTaskKind.WALK_REVIEW_REMARK,
+                LlmTaskKind.SPECIES_DESCRIPTION,
+                LlmTaskKind.POI_FLAVOR,
+            ),
             result.outcomes.map { it.taskKind },
-            "外れても困らない順（記述文が先）",
+            "いま効く順（帰宅直後に読む一言が先）",
         )
     }
 

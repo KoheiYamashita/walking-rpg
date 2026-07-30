@@ -6,6 +6,13 @@ import com.walkingrpg.shared.domain.llm.LlmCacheEntry
 import com.walkingrpg.shared.domain.llm.LlmTaskKind
 import com.walkingrpg.shared.domain.llm.llmCacheKey
 import com.walkingrpg.shared.domain.llm.poiFlavorLogicalKey
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -16,15 +23,22 @@ import kotlin.test.assertNull
  * フェイクでは確かめられない「SQLそのものの正しさ」だけをここで見る
  * ＝1論理キー1行に収束するか、種別での絞り込みが効くか。
  */
+@OptIn(ExperimentalCoroutinesApi::class)
 class LlmCacheRepositoryImplTest {
 
     private lateinit var database: WalkingRpgDatabase
 
-    private fun repository(): LlmCacheRepositoryImpl {
+    /**
+     * @param dispatcher 購読（`observe`）の流し先。テストスケジューラに乗せると、
+     *  保存のあとに `runCurrent()` で決定的に受け取れる。
+     */
+    private fun repository(
+        dispatcher: CoroutineDispatcher = Dispatchers.Default,
+    ): LlmCacheRepositoryImpl {
         val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
         WalkingRpgDatabase.Schema.create(driver)
         database = WalkingRpgDatabase(driver)
-        return LlmCacheRepositoryImpl(database)
+        return LlmCacheRepositoryImpl(database, dispatcher)
     }
 
     private fun entry(
@@ -90,6 +104,41 @@ class LlmCacheRepositoryImplTest {
         val entries = repository.entries(LlmTaskKind.POI_FLAVOR)
 
         assertEquals(mapOf(first.cacheKey to first, second.cacheKey to second), entries)
+    }
+
+    @Test
+    fun 購読は保存で流れる() = runTest {
+        // 振り返りの遅延差し込み（issue #15）の土台。開いたままの画面へ生成が届く経路
+        val dispatcher = UnconfinedTestDispatcher(testScheduler)
+        val repository = repository(dispatcher)
+        val saved = entry("node/1", "木陰が涼しい。")
+
+        val emissions = mutableListOf<LlmCacheEntry?>()
+        val job = launch(dispatcher) { repository.observe(saved.cacheKey).toList(emissions) }
+        runCurrent()
+
+        assertEquals(listOf<LlmCacheEntry?>(null), emissions, "行が無いあいだは null が1回")
+        repository.save(saved)
+        runCurrent()
+        assertEquals(listOf(null, saved), emissions, "保存で流れ直す")
+        job.cancel()
+    }
+
+    @Test
+    fun 購読は他のキーの保存では流れない() = runTest {
+        val dispatcher = UnconfinedTestDispatcher(testScheduler)
+        val repository = repository(dispatcher)
+        val watched = entry("node/1", "見ている行。")
+
+        val emissions = mutableListOf<LlmCacheEntry?>()
+        val job = launch(dispatcher) { repository.observe(watched.cacheKey).toList(emissions) }
+        runCurrent()
+        repository.save(entry("node/2", "別の行。"))
+        runCurrent()
+
+        // SQLDelight は同じテーブルの書き込みで流し直すので、値としては変わらないことを見る
+        assertEquals(listOf<LlmCacheEntry?>(null), emissions.distinct())
+        job.cancel()
     }
 
     @Test

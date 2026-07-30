@@ -47,8 +47,12 @@ internal class FakeWalkNotifier : WalkNotifier {
     /** 出した「おかえり」通知の長さ（ms）。件数と中身の両方を見たいので列で持つ。 */
     val homecomings = mutableListOf<Long>()
 
-    override fun notifyHomecoming(durationMs: Long) {
+    /** 通知に載せたセッションID（タップで開く振り返りの宛先。issue #15）。 */
+    val homecomingSessionIds = mutableListOf<Long>()
+
+    override fun notifyHomecoming(sessionId: Long, durationMs: Long) {
         homecomings += durationMs
+        homecomingSessionIds += sessionId
     }
 }
 
@@ -186,4 +190,10 @@ internal class FakeWalkSessionRepository : WalkSessionRepository {
 
     override suspend fun session(sessionId: Long): WalkSession? =
         sessionsState.value.firstOrNull { it.id == sessionId }
+
+    // 本実装（SQL）と同じ並び：終了時刻の新しい順
+    override suspend fun recentFinishedSessions(limit: Int): List<WalkSession> = sessionsState.value
+        .filterNot { it.isOpen }
+        .sortedWith(compareByDescending<WalkSession> { it.endedAtMs }.thenByDescending { it.id })
+        .take(limit)
 }

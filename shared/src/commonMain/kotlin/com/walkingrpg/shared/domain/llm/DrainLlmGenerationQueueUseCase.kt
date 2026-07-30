@@ -32,16 +32,21 @@ import kotlinx.coroutines.sync.withLock
  * DI（`sharedModule`）では `single` で登録してある。
  *
  * ## キューの並び
- * 地点フレーバー（#14）と図鑑の記述文（#13）の2本。#16（振り返り文）が増えるときも
- * **コンストラクタに引数を足す**：`List<LlmGenerationQueue>` で受けると、
+ * 振り返りの一言（#15）・図鑑の記述文（#13）・地点フレーバー（#14）の3本。
+ * 増えるときは**コンストラクタに引数を足す**：`List<LlmGenerationQueue>` で受けると、
  * 登録漏れが実行時（何も生成されない）にしか分からない。引数で受ければ
  * DIの検証（`SharedModuleVerifyTest`）とコンパイラが漏れを見つける。
  *
- * 並びは「件数の多い順」ではなく**外れても困らない順**にしてある：
- * 記述文は種が有限（十数件）で、発見した瞬間に文章が無いのがいちばん痛い（design.md §4.4）ので
- * 先に埋める。地点フレーバーは数百件あるが、未生成の地点は定型文でそのまま成立する。
+ * 並びは「件数の多い順」ではなく**いま効く順**にしてある：
+ *
+ * 1. **振り返りの一言**：帰宅直後に開く画面に載る1件。事前に作れないぶん、
+ *    ここが遅れると定型文のまま閉じられる（design.md §4.5）
+ * 2. **図鑑の記述文**：種は有限（十数件）で、発見した瞬間に文章が無いのがいちばん痛い
+ *    （design.md §4.4）
+ * 3. **地点フレーバー**：数百件あるが、未生成の地点は定型文でそのまま成立する
  */
 class DrainLlmGenerationQueueUseCase(
+    private val walkReviewRemarkQueue: LlmGenerationQueue,
     private val speciesDescriptionQueue: LlmGenerationQueue,
     private val poiFlavorQueue: LlmGenerationQueue,
 ) {
@@ -67,7 +72,7 @@ class DrainLlmGenerationQueueUseCase(
     }
 
     private val queues: List<LlmGenerationQueue>
-        get() = listOf(speciesDescriptionQueue, poiFlavorQueue)
+        get() = listOf(walkReviewRemarkQueue, speciesDescriptionQueue, poiFlavorQueue)
 
     /** ドレイン1回の結果（キューごと）。 */
     data class Result(

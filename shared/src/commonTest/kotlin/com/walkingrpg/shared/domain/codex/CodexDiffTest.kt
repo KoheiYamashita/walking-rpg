@@ -61,6 +61,33 @@ class CodexDiffTest {
     }
 
     @Test
+    fun 予兆が立った種が出る() {
+        // 振り返りの「さっきの振動の中身」（design.md §3 の 17:08）の材料
+        val before = listOf(progress("a", visitCount = 1))
+        val after = listOf(progress("a", visitCount = 2, foreshadowStage = ForeshadowStage.NEAR))
+
+        assertEquals(setOf("a"), CodexDiff.newlyForeshadowedSpeciesIds(before, after))
+    }
+
+    @Test
+    fun 前から予兆が立っていた種は出ない() {
+        val before = listOf(progress("a", visitCount = 2, foreshadowStage = ForeshadowStage.NEAR))
+        val after = listOf(progress("a", visitCount = 3, foreshadowStage = ForeshadowStage.NEAR))
+
+        assertEquals(emptySet(), CodexDiff.newlyForeshadowedSpeciesIds(before, after))
+    }
+
+    @Test
+    fun 発見に至った種は予兆側に出ない() {
+        // 「出会った」と「近づいた」が同じ散歩で二重に並ばないこと
+        val before = listOf(progress("a", visitCount = 2))
+        val after = listOf(progress("a", visitCount = 3, discoveredAtMs = 300L))
+
+        assertEquals(setOf("a"), CodexDiff.newlyDiscoveredSpeciesIds(before, after))
+        assertEquals(emptySet(), CodexDiff.newlyForeshadowedSpeciesIds(before, after))
+    }
+
+    @Test
     fun 同時に複数の種が出ることもある() {
         val after = listOf(
             progress("a", discoveredAtMs = 100L),

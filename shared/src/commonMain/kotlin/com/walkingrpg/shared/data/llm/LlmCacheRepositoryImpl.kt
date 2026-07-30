@@ -1,5 +1,7 @@
 package com.walkingrpg.shared.data.llm
 
+import app.cash.sqldelight.coroutines.asFlow
+import app.cash.sqldelight.coroutines.mapToOneOrNull
 import com.walkingrpg.shared.data.db.Llm_cache
 import com.walkingrpg.shared.data.db.WalkingRpgDatabase
 import com.walkingrpg.shared.domain.llm.LlmCacheEntry
@@ -7,6 +9,8 @@ import com.walkingrpg.shared.domain.llm.LlmCacheRepository
 import com.walkingrpg.shared.domain.llm.LlmTaskKind
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 
 /**
@@ -26,6 +30,15 @@ internal class LlmCacheRepositoryImpl(
     override suspend fun entry(cacheKey: String): LlmCacheEntry? = withContext(dispatcher) {
         cache.selectLlmCache(cacheKey).executeAsOneOrNull()?.toEntry()
     }
+
+    // 購読は SQLDelight の coroutines 拡張に任せる（WalkSessionRepositoryImpl.observeSessions と
+    // 同じ手口）。書き込みのたびにクエリが流し直されるので、生成が保存された瞬間に
+    // 振り返りの画面へ届く（architecture.md §5「文章は遅延OK」の差し込み口）。
+    override fun observe(cacheKey: String): Flow<LlmCacheEntry?> =
+        cache.selectLlmCache(cacheKey)
+            .asFlow()
+            .mapToOneOrNull(dispatcher)
+            .map { row -> row?.toEntry() }
 
     override suspend fun entries(kind: LlmTaskKind): Map<String, LlmCacheEntry> =
         withContext(dispatcher) {
