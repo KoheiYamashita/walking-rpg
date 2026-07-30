@@ -65,8 +65,17 @@ internal class IosSnapshotImageStore : SnapshotImageStore {
         }
     }
 
-    /** 永続領域からの相対パスを絶対パスにする。ルートを知っているのはこのクラスだけ。 */
+    /**
+     * 永続領域からの相対パスを絶対パスにする。ルートを知っているのはこのクラスだけ。
+     *
+     * Documents の外に出るパス（`..`・絶対パス）は拒否する（多層防御。
+     * 正規形の検証はインポート側 `BackupArchiveCodec` が先に行うが、
+     * ここは「どこから呼ばれても外に書かない」の最後の砦）。
+     */
     private fun resolve(relativePath: String): String {
+        require(!relativePath.startsWith("/") && relativePath.split("/").none { it == ".." }) {
+            "永続領域の外を指すパスは扱えません"
+        }
         val documents = NSSearchPathForDirectoriesInDomains(
             directory = NSDocumentDirectory,
             domainMask = NSUserDomainMask,
