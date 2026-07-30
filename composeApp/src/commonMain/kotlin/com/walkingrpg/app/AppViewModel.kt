@@ -76,7 +76,8 @@ class AppViewModel(
      * もう一度やれば揃う（`RecomputeAfterWalkUseCase`）ので、失敗しても失われる記録は無い
      * ＝ここで握りつぶしても嘘にはならない。ただし「何も起きなかったように見える」のは
      * 別の問題なので、原因は状態として残しておく。
-     * TODO(#20 設定画面): デバッグ表示の置き場ができたらそこに出す。
+     * 出口は設定画面の「デバッグ情報」（issue #20・`SettingsDebugInfo`）。
+     * 保持はここのまま＝画面のViewModelに写して二重管理しない。
      */
     val recomputeError: StateFlow<String?> = _recomputeError.asStateFlow()
 
@@ -85,11 +86,9 @@ class AppViewModel(
     /**
      * 直近の天候取得が失敗した理由（成功したら `null`）。
      *
-     * [recomputeError] と同じ扱い：まだ画面には出していないが、
-     * 「何も起きなかったように見える」のを避けるために状態としては残す。
-     * 天候は取れなくても散歩の記録（真実の源）に欠けは出ない
+     * [recomputeError] と同じ扱い：設定画面の「デバッグ情報」に出すだけで、
+     * 失敗そのものは握る。天候は取れなくても散歩の記録（真実の源）に欠けは出ない
      * （architecture.md §8「天候APIの欠測」）。
-     * TODO(#20 設定画面): デバッグ表示の置き場ができたらそこに出す。
      */
     val weatherError: StateFlow<String?> = _weatherError.asStateFlow()
 
@@ -98,11 +97,9 @@ class AppViewModel(
     /**
      * 直近のLLM生成が失敗した理由（成功したら `null`）。
      *
-     * [recomputeError] / [weatherError] と同じ扱い：まだ画面には出していないが、
-     * 「何も起きなかったように見える」のを避けるために状態としては残す。
+     * [recomputeError] / [weatherError] と同じ扱い：設定画面の「デバッグ情報」に出すだけ。
      * 生成できていない地点は定型文で成立する（design.md §7）ので、
      * 失敗しても散歩は始められる。
-     * TODO(#20 設定画面): デバッグ表示の置き場ができたらそこに出す。
      */
     val llmGenerationError: StateFlow<String?> = _llmGenerationError.asStateFlow()
 
@@ -228,7 +225,8 @@ class AppViewModel(
      * 取れなくても散歩の記録（真実の源）に欠けは出ない
      * （architecture.md §8「権限が取れない場合は機能ごと落とせる設計」）。
      * 権限が無ければ歩数計側が `null` を返して何も起きない
-     * （権限要求のUIは #20 のスコープ）。
+     * （権限要求のUIは別issue。設定画面（#20）には載せなかった：
+     * `HealthConnectDailyStepsSource` のKDoc「権限のリクエスト導線」）。
      *
      * 状態としても残さないのは、これが「取れたら嬉しい」情報だから：
      * 取れなかったこと自体は正常な流れで、次の起動でやり直せる（取り込みは冪等）。

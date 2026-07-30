@@ -5,10 +5,6 @@ import androidx.lifecycle.viewModelScope
 import com.walkingrpg.shared.domain.GetPlatformNameUseCase
 import com.walkingrpg.shared.domain.feedback.ObserveWalkEventsUseCase
 import com.walkingrpg.shared.domain.feedback.WalkEvent
-import com.walkingrpg.shared.domain.osm.GetOsmMasterCountsUseCase
-import com.walkingrpg.shared.domain.osm.ImportOsmAreaUseCase
-import com.walkingrpg.shared.domain.osm.OsmImportResult
-import com.walkingrpg.shared.domain.osm.OsmMasterCounts
 import com.walkingrpg.shared.domain.walk.ExportWalkSessionUseCase
 import com.walkingrpg.shared.domain.walk.LocationPermissionStatus
 import com.walkingrpg.shared.domain.walk.ObserveLocationPermissionUseCase
@@ -37,7 +33,6 @@ data class HomeUiState(
     val recording: WalkRecordingSnapshot = WalkRecordingSnapshot(),
     val permission: LocationPermissionStatus = LocationPermissionStatus.UNKNOWN,
     val sessions: List<WalkSessionSummary> = emptyList(),
-    val osmImport: OsmImportUiState = OsmImportUiState(),
     val message: String? = null,
     /**
      * 歩行中に最後に起きたイベント（design.md §3「信号待ちなどで見た場合も、
@@ -56,22 +51,6 @@ data class HomeUiState(
 
     val needsPermission: Boolean get() = permission != LocationPermissionStatus.GRANTED
 }
-
-/**
- * OSMマスタ取り込み（issue #5）のデバッグUI状態。
- *
- * 本来の導線は初回セットアップ（issue #6）が作る。ここは
- * 「監査値（design.md §9）と件数が乖離していないか」を実機で確かめるための仮表示。
- *
- * @param storedCounts 端末DBに現在入っている件数（再取り込みで増えない＝冪等の目視確認用）。
- * @param lastResult 直近の取り込み1回の内訳（除外件数を含む）。
- */
-data class OsmImportUiState(
-    val isImporting: Boolean = false,
-    val storedCounts: OsmMasterCounts? = null,
-    val lastResult: OsmImportResult? = null,
-    val error: String? = null,
-)
 
 /**
  * ホーム画面のViewModel。
@@ -93,8 +72,6 @@ class HomeViewModel(
     private val refreshLocationPermission: RefreshLocationPermissionUseCase,
     private val exportWalkSession: ExportWalkSessionUseCase,
     observeWalkEvents: ObserveWalkEventsUseCase,
-    private val importOsmArea: ImportOsmAreaUseCase,
-    private val getOsmMasterCounts: GetOsmMasterCountsUseCase,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(HomeUiState())
@@ -126,7 +103,6 @@ class HomeViewModel(
                 _uiState.update { it.copy(lastWalkEvent = event) }
             }
         }
-        viewModelScope.launch { refreshOsmCounts() }
     }
 
     /** 画面に戻ってきたときに権限の付与状況を読み直す。 */
@@ -164,53 +140,7 @@ class HomeViewModel(
         }
     }
 
-    /**
-     * 再取り込みのトリガー（issue #5）。本導線は初回セットアップ（issue #6）に移ったが、
-     * 取り込みし直す手段として残してある。TODO(#20): 設定画面ができたらそちらへ移す。
-     */
-    fun onImportOsmArea() {
-        if (_uiState.value.osmImport.isImporting) return
-        _uiState.update { it.copy(osmImport = it.osmImport.copy(isImporting = true, error = null)) }
-        viewModelScope.launch {
-            try {
-                val result = importOsmArea()
-                _uiState.update {
-                    it.copy(osmImport = it.osmImport.copy(isImporting = false, lastResult = result))
-                }
-                refreshOsmCounts()
-            } catch (cancellation: CancellationException) {
-                throw cancellation
-            } catch (error: Throwable) {
-                _uiState.update {
-                    it.copy(
-                        osmImport = it.osmImport.copy(
-                            isImporting = false,
-                            error = error.message ?: "原因不明",
-                        ),
-                    )
-                }
-            }
-        }
-    }
-
     fun onMessageShown() {
         _uiState.update { it.copy(message = null) }
-    }
-
-    private suspend fun refreshOsmCounts() {
-        try {
-            val counts = getOsmMasterCounts()
-            _uiState.update { it.copy(osmImport = it.osmImport.copy(storedCounts = counts)) }
-        } catch (cancellation: CancellationException) {
-            throw cancellation
-        } catch (error: Throwable) {
-            _uiState.update {
-                it.copy(
-                    osmImport = it.osmImport.copy(
-                        error = "マスタ件数の読み出しに失敗しました: ${error.message ?: "原因不明"}",
-                    ),
-                )
-            }
-        }
     }
 }

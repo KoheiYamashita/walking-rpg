@@ -26,8 +26,22 @@ import java.time.LocalDate
  * 失敗で起動時の処理を巻き添えにしないため、ここで全部受け止めてログに残すだけにする
  * （[AndroidWalkNotifier] と同じ方針）。
  *
- * 権限のリクエスト導線はここには置かない：権限が無ければ `null` を返すだけで、
- * 「歩数を読ませてもらう」ことをユーザーに頼む画面は #16 / #20 で作る。
+ * ## 権限のリクエスト導線は未実装（#18以降の別issue）
+ *
+ * 設定画面（#20）には載せなかった。位置情報（[AndroidLocationPermissionController]）の
+ * 前例に倣うだけでは済まないため：
+ *
+ * - 付与状況の読み出しが **suspend**（`getGrantedPermissions`）なので、
+ *   同期の `checkSelfPermission` を前提にした `LocationPermissionController` の形
+ *   （`StateFlow` を素直に作れる）に乗らず、コントローラ側にスコープが必要になる
+ * - 状態が2値（許可/拒否）では足りない。「Health Connect が入っていない・要更新・非対応」
+ *   のときは権限ダイアログ自体を出せないので、ストアへ促す分岐まで持つことになる
+ * - 権限の要求契約（`PermissionController.createRequestPermissionResultContract`）も
+ *   位置情報とは別のランチャーで、`MainActivity` への預け入れが1本増える
+ *
+ * つまり expect/actual・ドメインのリポジトリ・UseCase を丸ごと1組増やす作業になり、
+ * 「押し忘れ救済のおまけ」に対して重い。権限が無ければ `null` を返して何も起きない
+ * （＝この状態でも他の機能は無傷）ので、独立したissueとして切り出す。
  */
 internal class HealthConnectDailyStepsSource(
     private val context: Context,

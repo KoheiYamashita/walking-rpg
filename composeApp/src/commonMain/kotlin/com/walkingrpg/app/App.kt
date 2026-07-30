@@ -23,6 +23,8 @@ import com.walkingrpg.app.ui.codex.CodexScreen
 import com.walkingrpg.app.ui.home.HomeScreen
 import com.walkingrpg.app.ui.map.MapScreen
 import com.walkingrpg.app.ui.review.ReviewScreen
+import com.walkingrpg.app.ui.settings.SettingsDebugInfo
+import com.walkingrpg.app.ui.settings.SettingsScreen
 import com.walkingrpg.app.ui.setup.SetupScreen
 import org.koin.compose.viewmodel.koinViewModel
 
@@ -40,6 +42,9 @@ private sealed interface Screen {
 
     /** 月次スナップショットのアルバム（design.md §4.5・issue #17）。 */
     data object Album : Screen
+
+    /** 接続設定の変更・自宅の再設定（design.md §9・issue #20）。 */
+    data object Settings : Screen
 
     /** 振り返り（design.md §3 の 17:08）。 */
     data class Review(val sessionId: Long) : Screen
@@ -72,6 +77,11 @@ fun App(viewModel: AppViewModel = koinViewModel()) {
     val keepScreenOn by viewModel.keepScreenOn.collectAsStateWithLifecycle()
     val setupGate by viewModel.setupGate.collectAsStateWithLifecycle()
     val pendingReviewSessionId by viewModel.pendingReviewSessionId.collectAsStateWithLifecycle()
+    // 直近の失敗理由は設定画面のデバッグ情報に出すだけ（issue #20）。
+    // 保持は AppViewModel のまま＝画面のViewModelに写して二重管理しない
+    val recomputeError by viewModel.recomputeError.collectAsStateWithLifecycle()
+    val weatherError by viewModel.weatherError.collectAsStateWithLifecycle()
+    val llmGenerationError by viewModel.llmGenerationError.collectAsStateWithLifecycle()
 
     MaterialTheme {
         Surface {
@@ -92,6 +102,11 @@ fun App(viewModel: AppViewModel = koinViewModel()) {
                 SetupGateState.Ready -> MainNavigation(
                     pendingReviewSessionId = pendingReviewSessionId,
                     onReviewOpened = viewModel::onReviewOpened,
+                    debugInfo = SettingsDebugInfo(
+                        recomputeError = recomputeError,
+                        weatherFetchError = weatherError,
+                        llmGenerationError = llmGenerationError,
+                    ),
                 )
             }
         }
@@ -104,6 +119,8 @@ fun App(viewModel: AppViewModel = koinViewModel()) {
  * @param pendingReviewSessionId 非nullなら振り返りへ自動で移る（散歩の自動終了・
  *  「おかえり」通知のタップ。`AppViewModel.pendingReviewSessionId`）。移った時点で
  *  [onReviewOpened] を呼んで合図を消す＝戻ったあとに開き直されない。
+ * @param debugInfo 設定画面のデバッグ情報（`AppViewModel` が持つ直近の失敗理由）。
+ *  設定画面のViewModelには持たせない（二重管理を避ける）。
  */
 @Suppress("DEPRECATION")
 @OptIn(ExperimentalComposeUiApi::class)
@@ -111,6 +128,7 @@ fun App(viewModel: AppViewModel = koinViewModel()) {
 private fun MainNavigation(
     pendingReviewSessionId: Long?,
     onReviewOpened: () -> Unit,
+    debugInfo: SettingsDebugInfo,
 ) {
     var screen: Screen by remember { mutableStateOf(Screen.Home) }
 
@@ -127,6 +145,7 @@ private fun MainNavigation(
             onOpenMap = { screen = Screen.Map },
             onOpenCodex = { screen = Screen.Codex },
             onOpenAlbum = { screen = Screen.Album },
+            onOpenSettings = { screen = Screen.Settings },
             // 過去の散歩も同じ画面で開く（振り返りは冪等に組み直せる＝GetWalkReviewUseCase）
             onOpenReview = { sessionId -> screen = Screen.Review(sessionId) },
         )
@@ -136,6 +155,11 @@ private fun MainNavigation(
         Screen.Codex -> CodexScreen(onBack = { screen = Screen.Home })
         // 一覧⇄拡大表示は AlbumScreen 自身が持つ（図鑑と同じ形）
         Screen.Album -> AlbumScreen(onBack = { screen = Screen.Home })
+        // 設定は単一スクロールの1画面（中に階層を作らない＝BackHandler の1階層に収まる）
+        Screen.Settings -> SettingsScreen(
+            onBack = { screen = Screen.Home },
+            debugInfo = debugInfo,
+        )
         is Screen.Review -> ReviewScreen(
             sessionId = current.sessionId,
             onBack = { screen = Screen.Home },

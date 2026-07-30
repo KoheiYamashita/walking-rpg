@@ -31,6 +31,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.walkingrpg.app.ui.components.MetricRow
 import com.walkingrpg.shared.domain.feedback.WalkEvent
 import com.walkingrpg.shared.domain.walk.LocationPermissionStatus
 import com.walkingrpg.shared.domain.walk.WalkRecordingSnapshot
@@ -51,6 +52,7 @@ fun HomeScreen(
     onOpenMap: () -> Unit,
     onOpenCodex: () -> Unit,
     onOpenAlbum: () -> Unit,
+    onOpenSettings: () -> Unit,
     onOpenReview: (Long) -> Unit,
     modifier: Modifier = Modifier,
     viewModel: HomeViewModel = koinViewModel(),
@@ -64,11 +66,11 @@ fun HomeScreen(
         onToggleWalk = viewModel::onToggleWalk,
         onRequestPermission = viewModel::onRequestPermission,
         onExportSession = viewModel::onExportSession,
-        onImportOsmArea = viewModel::onImportOsmArea,
         onMessageShown = viewModel::onMessageShown,
         onOpenMap = onOpenMap,
         onOpenCodex = onOpenCodex,
         onOpenAlbum = onOpenAlbum,
+        onOpenSettings = onOpenSettings,
         onOpenReview = onOpenReview,
         modifier = modifier,
     )
@@ -81,11 +83,11 @@ fun HomeContent(
     onToggleWalk: () -> Unit,
     onRequestPermission: () -> Unit,
     onExportSession: (Long) -> Unit,
-    onImportOsmArea: () -> Unit,
     onMessageShown: () -> Unit,
     onOpenMap: () -> Unit,
     onOpenCodex: () -> Unit,
     onOpenAlbum: () -> Unit,
+    onOpenSettings: () -> Unit,
     onOpenReview: (Long) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -167,12 +169,10 @@ fun HomeContent(
                     Text("アルバムを見る")
                 }
             }
-
             item {
-                HorizontalDivider()
-            }
-            item {
-                OsmImportCard(state = uiState.osmImport, onImport = onImportOsmArea)
+                TextButton(onClick = onOpenSettings, modifier = Modifier.fillMaxWidth()) {
+                    Text("設定")
+                }
             }
 
             item {
@@ -291,75 +291,6 @@ private fun RecordingCard(recording: WalkRecordingSnapshot, walkEvent: WalkEvent
                 )
             }
         }
-    }
-}
-
-/**
- * OSMマスタ取り込みのデバッグUI（issue #5）。
- *
- * 本導線は初回セットアップ（issue #6）に移ったが、**再取り込みの暫定手段として
- * ここに残してある**（対象圏を広げたい・取り込みが途中で失敗した場合の逃げ道）。
- * TODO(#20): 設定画面ができたらそちらへ移し、ホームからは外す。
- */
-@Composable
-private fun OsmImportCard(state: OsmImportUiState, onImport: () -> Unit) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text(text = "OSMマスタ（デバッグ）", style = MaterialTheme.typography.titleMedium)
-            Text(
-                text = "対象圏の中心は現在地、半径は500m。位置情報の権限が要ります。",
-                style = MaterialTheme.typography.bodySmall,
-            )
-
-            val stored = state.storedCounts
-            MetricRow("DBのway", stored?.let { "${it.wayCount}件" } ?: "-")
-            MetricRow("DBのPOI", stored?.let { "${it.poiCount}件" } ?: "-")
-
-            state.lastResult?.let { result ->
-                HorizontalDivider()
-                MetricRow("取り込んだway", "${result.wayCount}件")
-                MetricRow("取り込んだPOI", "${result.poiCount}件")
-                MetricRow(
-                    label = "除外（way / POI）",
-                    value = "${result.excludedWayCount} / ${result.excludedPoiCount}件",
-                )
-                Text(
-                    text = "POIの除外内訳：配置禁止 ${result.excludedUnsafePoiCount}件、" +
-                        "分類対象外 ${result.excludedUnclassifiedPoiCount}件",
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
-
-            state.error?.let { error ->
-                Text(
-                    text = error,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                )
-            }
-
-            Button(
-                onClick = onImport,
-                enabled = !state.isImporting,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(if (state.isImporting) "取り込み中…" else "対象圏データを取り込む")
-            }
-        }
-    }
-}
-
-@Composable
-private fun MetricRow(label: String, value: String) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        Text(text = label, style = MaterialTheme.typography.bodyMedium)
-        Text(text = value, style = MaterialTheme.typography.bodyLarge)
     }
 }
 

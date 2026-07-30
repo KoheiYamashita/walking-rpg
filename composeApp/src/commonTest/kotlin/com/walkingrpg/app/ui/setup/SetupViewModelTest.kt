@@ -2,15 +2,8 @@ package com.walkingrpg.app.ui.setup
 
 import com.walkingrpg.shared.domain.osm.GetOsmMasterCountsUseCase
 import com.walkingrpg.shared.domain.osm.ImportOsmAreaUseCase
-import com.walkingrpg.shared.domain.osm.OsmArea
-import com.walkingrpg.shared.domain.osm.OsmAreaSnapshot
-import com.walkingrpg.shared.domain.osm.OsmAreaSource
 import com.walkingrpg.shared.domain.osm.OsmMasterCounts
-import com.walkingrpg.shared.domain.osm.OsmMasterRepository
-import com.walkingrpg.shared.domain.osm.Poi
-import com.walkingrpg.shared.domain.osm.Way
 import com.walkingrpg.shared.domain.setup.CompleteSetupUseCase
-import com.walkingrpg.shared.domain.setup.HomeAnchor
 import com.walkingrpg.shared.domain.setup.LlmConnectionSettings
 import com.walkingrpg.shared.domain.setup.LlmConnectionTestResult
 import com.walkingrpg.shared.domain.setup.LlmConnectionTester
@@ -22,20 +15,11 @@ import com.walkingrpg.shared.domain.setup.SetupRepository
 import com.walkingrpg.shared.domain.setup.SetupStep
 import com.walkingrpg.shared.domain.setup.TestLlmConnectionUseCase
 import com.walkingrpg.shared.domain.setup.UpdateHomeBlurRadiusUseCase
-import com.walkingrpg.shared.domain.setup.WeatherProviderChoice
-import com.walkingrpg.shared.domain.setup.WeatherSettings
-import com.walkingrpg.shared.domain.walk.CurrentLocationRepository
-import com.walkingrpg.shared.domain.walk.LocationFix
-import com.walkingrpg.shared.domain.walk.LocationPermissionRepository
-import com.walkingrpg.shared.domain.walk.LocationPermissionStatus
 import com.walkingrpg.shared.domain.walk.ObserveLocationPermissionUseCase
 import com.walkingrpg.shared.domain.walk.RefreshLocationPermissionUseCase
 import com.walkingrpg.shared.domain.walk.RequestLocationPermissionUseCase
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -229,84 +213,3 @@ class SetupViewModelTest {
     }
 }
 
-/** 応答を任意のタイミングで返せる疎通テスター（テスト中の入力変更を再現するため）。 */
-private class SuspendingLlmConnectionTester : LlmConnectionTester {
-    private val response = CompletableDeferred<LlmConnectionTestResult>()
-
-    fun complete(result: LlmConnectionTestResult) {
-        response.complete(result)
-    }
-
-    override suspend fun test(settings: LlmConnectionSettings): LlmConnectionTestResult =
-        response.await()
-}
-
-private class FakeSetupRepository(
-    private var llm: LlmConnectionSettings? = null,
-    private var weather: WeatherSettings = WeatherSettings(WeatherProviderChoice.OPEN_METEO),
-    private var home: HomeAnchor? = null,
-) : SetupRepository {
-    private var completed = false
-
-    override suspend fun loadLlmConnection(): LlmConnectionSettings? = llm
-
-    override suspend fun saveLlmConnection(settings: LlmConnectionSettings) {
-        llm = settings
-    }
-
-    override suspend fun loadWeatherSettings(): WeatherSettings = weather
-
-    override suspend fun saveWeatherSettings(settings: WeatherSettings) {
-        weather = settings
-    }
-
-    override suspend fun loadHomeAnchor(): HomeAnchor? = home
-
-    override suspend fun saveHomeAnchor(anchor: HomeAnchor) {
-        home = anchor
-    }
-
-    override suspend fun isSetupCompleted(): Boolean = completed
-
-    override suspend fun markSetupCompleted() {
-        completed = true
-    }
-}
-
-private class FakeOsmMasterRepository(
-    private var counts: OsmMasterCounts,
-) : OsmMasterRepository {
-    override suspend fun save(ways: List<Way>, pois: List<Poi>) {
-        counts = OsmMasterCounts(wayCount = ways.size, poiCount = pois.size)
-    }
-
-    override suspend fun counts(): OsmMasterCounts = counts
-
-    override suspend fun ways(): List<Way> = emptyList()
-
-    override suspend fun pois(): List<Poi> = emptyList()
-}
-
-private class FakeOsmAreaSource : OsmAreaSource {
-    override suspend fun fetchArea(area: OsmArea): OsmAreaSnapshot =
-        OsmAreaSnapshot(ways = emptyList(), pois = emptyList())
-}
-
-private class FakeCurrentLocationRepository : CurrentLocationRepository {
-    // 架空座標（CONTRIBUTING.md「実在の座標を書かない」）
-    override suspend fun currentFix(): LocationFix? = LocationFix(
-        timestampMs = 0,
-        latitude = 12.0,
-        longitude = 34.0,
-        accuracyMeters = 5.0,
-    )
-}
-
-private class FakePermissionRepository : LocationPermissionRepository {
-    override val status: StateFlow<LocationPermissionStatus> =
-        MutableStateFlow(LocationPermissionStatus.GRANTED)
-
-    override fun refresh() = Unit
-
-    override fun request() = Unit
-}
