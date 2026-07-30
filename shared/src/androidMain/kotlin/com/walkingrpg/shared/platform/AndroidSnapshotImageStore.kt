@@ -38,5 +38,19 @@ internal class AndroidSnapshotImageStore(
         withContext(Dispatchers.IO) { resolve(relativePath).delete() }
     }
 
-    private fun resolve(relativePath: String): File = File(context.filesDir, relativePath)
+    /**
+     * `filesDir` の外に出るパスは拒否する（多層防御）。
+     *
+     * 相対パスの正規形はインポート側（`BackupArchiveCodec`）が先に検証するが、
+     * ここは「どこから呼ばれても filesDir の外には書かない」を最後の砦として保証する
+     * （`..` や絶対パスは canonical 化で filesDir の外を指す）。
+     */
+    private fun resolve(relativePath: String): File {
+        val base = context.filesDir.canonicalFile
+        val file = File(base, relativePath).canonicalFile
+        require(file.path.startsWith(base.path + File.separator)) {
+            "filesDir の外を指すパスは扱えません"
+        }
+        return file
+    }
 }

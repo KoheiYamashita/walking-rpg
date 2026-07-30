@@ -302,6 +302,14 @@ internal class BackupArchiveCodec : BackupCodec {
                 // 行のある月には必ず画像が要る（行だけ残った「アルバム割れ」を
                 // インポートで作らない。`Snapshot.sq`）。
                 snapshotImages = snapshots.map { row ->
+                    // zipは信頼できない入力。`image_path` はそのままファイル書き込みの
+                    // パスになるので、正規の形（snapshots/YYYY-MM.png）以外は
+                    // ここで弾く（`../` などによるパストラバーサル防止）。
+                    if (!SAFE_IMAGE_PATH.matches(row.imagePath)) {
+                        throw BackupFormatException(
+                            "不正な画像パスです: ${row.imagePath}",
+                        )
+                    }
                     val entry = byName[row.imagePath]
                         ?: throw BackupFormatException(
                             "スナップショット画像が入っていません: ${row.imagePath}",
@@ -356,6 +364,12 @@ internal class BackupArchiveCodec : BackupCodec {
          * シナリオ進行を実装したらここを上げてエントリを足す（[BackupCodec] のKDoc）。
          */
         const val SCHEMA_VERSION: Int = 1
+
+        /**
+         * インポートで受け入れる画像パスの正規形。`snapshotImagePath()` が生成する形と
+         * 1対1で、これ以外（絶対パス・`..`・別ディレクトリ）は改ざんされたzipとして弾く。
+         */
+        val SAFE_IMAGE_PATH = Regex("""snapshots/\d{4}-\d{2}\.png""")
 
         const val MANIFEST = "manifest.json"
         const val WALK_SESSIONS = "walk_sessions.json"

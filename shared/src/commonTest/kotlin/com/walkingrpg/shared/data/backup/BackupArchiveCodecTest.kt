@@ -272,6 +272,44 @@ class BackupArchiveCodecTest {
         assertFailsWith<BackupFormatException> { codec.decode(tampered) }
     }
 
+    @Test
+    fun 画像パスが正規形でなければ弾く() {
+        // zipは信頼できない入力。`image_path` はファイル書き込み先になるので、
+        // パストラバーサル（`..`）・絶対パス・別ディレクトリはここで落とす
+        val badPaths = listOf(
+            "../../../data/evil.png",
+            "/etc/evil.png",
+            "snapshots/../evil.png",
+            "other/2026-06.png",
+            "snapshots/2026-06.png.exe",
+        )
+        for (badPath in badPaths) {
+            val tampered = encoded().map { entry ->
+                when (entry.name) {
+                    "snapshots.json" -> BackupEntry(
+                        entry.name,
+                        (
+                            """[{"month":"2026-06","imagePath":"$badPath",""" +
+                                """"statsJson":${statsJsonLiteral()},"createdAt":1}]"""
+                            ).encodeToByteArray(),
+                    )
+                    "snapshots/2026-06.png" -> BackupEntry(badPath, entry.bytes)
+                    else -> entry
+                }
+            }
+
+            val error = assertFailsWith<BackupFormatException>("$badPath は弾かれるべき") {
+                codec.decode(tampered)
+            }
+            assertTrue("不正な画像パス" in error.message, error.message)
+        }
+    }
+
+    /** snapshots.json に埋め込める、読める形の stats_json（JSON文字列リテラル）。 */
+    private fun statsJsonLiteral(): String =
+        "\"{\\\"schemaVersion\\\":1,\\\"distanceMeters\\\":0.0,\\\"newWayCount\\\":0," +
+            "\\\"discoveredSpeciesNames\\\":[],\\\"sessionCount\\\":0}\""
+
     // --- 未知の値（前方互換） ---
 
     @Test
