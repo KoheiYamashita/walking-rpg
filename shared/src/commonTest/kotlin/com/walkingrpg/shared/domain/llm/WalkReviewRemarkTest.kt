@@ -53,8 +53,25 @@ class WalkReviewRemarkTest {
         codexTotalCount = 17,
     )
 
-    private fun facts(review: WalkReview, timeOfDay: TimeOfDay = TimeOfDay.EVENING) =
-        WalkReviewRemarkFacts.of(review, timeOfDay)
+    /**
+     * 材料（[WalkRemarkContext]）は本番では [GetWalkRemarkContextUseCase] が調達するが、
+     * ここで見たいのはプロンプトの作り方だけなので直接置く。
+     */
+    private fun context(
+        timeOfDay: TimeOfDay = TimeOfDay.EVENING,
+        angle: RemarkAngle = RemarkAngle.DISTANCE,
+        memory: WalkMemory? = null,
+        stepsMention: StepsMention? = null,
+    ) = WalkRemarkContext(
+        timeOfDay = timeOfDay,
+        angle = angle,
+        placeRef = "day",
+        memory = memory,
+        stepsMention = stepsMention,
+    )
+
+    private fun facts(review: WalkReview, context: WalkRemarkContext = context()) =
+        WalkReviewRemarkFacts.of(review, context)
 
     @Test
     fun 距離は小数第1位の文字列で渡る() {
@@ -137,6 +154,90 @@ class WalkReviewRemarkTest {
         )
 
         assertFalse(withoutWeather.promptHash() == withWeather.promptHash())
+    }
+
+    @Test
+    fun 切り口は1つだけ指示する() {
+        // 禁止リストを並べない（RemarkAngle のKDoc「禁止リストではなく1値を渡す」）
+        val prompt = WalkReviewRemarkPromptBuilder.userPrompt(
+            facts(review(), context(angle = RemarkAngle.MEMORY)),
+        )
+
+        assertTrue(prompt.contains("今日はこの切り口を中心に書く: この道の記憶"), prompt)
+        assertFalse(prompt.contains("MEMORY"), "内部の値（utterance_log.angle）は渡さない")
+        assertEquals(
+            1,
+            prompt.lines().count { it.startsWith("今日はこの切り口") },
+            "切り口の指示は1行だけ",
+        )
+    }
+
+    @Test
+    fun 記憶は道も日数も抽象化して渡る() {
+        val prompt = WalkReviewRemarkPromptBuilder.userPrompt(
+            facts(
+                review = review(),
+                context = context(
+                    angle = RemarkAngle.MEMORY,
+                    memory = WalkMemory(WalkMemoryDepth.MONTH_AGO, daysAgo = 43),
+                ),
+            ),
+        )
+
+        assertTrue(prompt.contains("この道はひと月ほど前にも歩いた"), prompt)
+        assertFalse(prompt.contains("43"), "日数の生の値は渡さない: $prompt")
+        assertFalse(prompt.contains("way"), "内部キー（place_ref）は渡さない: $prompt")
+    }
+
+    @Test
+    fun 記憶が深いほど言い方が変わる() {
+        fun line(depth: WalkMemoryDepth, daysAgo: Int) = WalkReviewRemarkPromptBuilder
+            .userPrompt(facts(review(), context(memory = WalkMemory(depth, daysAgo))))
+            .lines()
+            .single { it.startsWith("この道の記憶") }
+
+        assertTrue(line(WalkMemoryDepth.FIRST_VISIT, 400).contains("初めて歩いたのは一年ほど前"))
+        assertTrue(line(WalkMemoryDepth.SEASON_AGO, 95).contains("二、三ヶ月前"))
+        assertTrue(line(WalkMemoryDepth.RECENT, 1).contains("昨日"))
+    }
+
+    @Test
+    fun 歩数は粗い量だけ渡して数値は渡さない() {
+        val prompt = WalkReviewRemarkPromptBuilder.userPrompt(
+            facts(
+                review = review(),
+                context = context(
+                    angle = RemarkAngle.STEPS,
+                    stepsMention = StepsMention(StepsAmount.GOOD, daysAgo = 1),
+                ),
+            ),
+        )
+
+        assertTrue(prompt.contains("昨日、けっこう歩いた"), prompt)
+        listOf("8200", "8,200", "歩数").forEach { forbidden ->
+            assertFalse(prompt.contains(forbidden), "$forbidden がプロンプトに乗っている: $prompt")
+        }
+    }
+
+    @Test
+    fun ブランクに触れないよう指示する() {
+        // 事実として渡す口が無い（WalkReviewRemarkFacts のKDoc）うえで、言い方も禁じる
+        val system = WalkReviewRemarkPromptBuilder.systemPrompt
+
+        assertTrue(system.contains("歩かなかった日・散歩の間隔・空いた期間には一切触れない"), system)
+        assertTrue(system.contains("久しぶり"), system)
+        assertTrue(system.contains("催促しない"), system)
+    }
+
+    @Test
+    fun 切り口が変わると指紋が変わる() {
+        // 同じ散歩でも切り口が回れば別の一言になる＝キャッシュも別扱いでなければならない
+        val distance = WalkReviewRemarkPromptBuilder
+            .request(facts(review(), context(angle = RemarkAngle.DISTANCE)), maxTokens = 400)
+        val timeOfDay = WalkReviewRemarkPromptBuilder
+            .request(facts(review(), context(angle = RemarkAngle.TIME_OF_DAY)), maxTokens = 400)
+
+        assertFalse(distance.promptHash() == timeOfDay.promptHash())
     }
 
     @Test

@@ -4,7 +4,7 @@ package com.walkingrpg.shared.domain.steps
  * 歩数計から「昨日・今日」を取り込んで `step_import` に残す（design.md §3「開始を押し忘れた日」）。
  *
  * 位置が無いので街は育たない。ここでやるのは「歩いたという事実を残す」ことだけで、
- * それを翌日のパートナーが言及する（#16）ための材料になる。
+ * それを翌日のパートナーが言及する（`GetWalkRemarkContextUseCase`。issue #16）ための材料になる。
  *
  * **対象日は昨日と今日の2日だけ**。押し忘れの救済に必要なのは直近であって履歴ではないし、
  * 起動のたびに過去何日ぶんも歩数計に問い合わせると、得るものの無い取得を毎回繰り返すことになる。
@@ -22,7 +22,8 @@ package com.walkingrpg.shared.domain.steps
  * 呼び出し順に依存した状態になり、冪等でなくなる。
  * 「押し忘れの日として言及するか」の判断は、両方を見られる #16 側で行う。
  *
- * 呼び出しタイミング（アプリ起動時）の結線は #16 で行う。
+ * 呼び出しタイミングは**アプリ起動時**（`AppViewModel` の起動ブロック。issue #16）。
+ * 失敗は握る：歩数が取れなくても散歩の記録には欠けが出ない。
  */
 class ImportDailyStepsUseCase(
     private val source: DailyStepsSource,

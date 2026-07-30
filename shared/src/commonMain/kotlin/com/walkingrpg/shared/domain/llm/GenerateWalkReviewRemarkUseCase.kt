@@ -2,7 +2,6 @@ package com.walkingrpg.shared.domain.llm
 
 import com.walkingrpg.shared.domain.Clock
 import com.walkingrpg.shared.domain.review.GetWalkReviewUseCase
-import com.walkingrpg.shared.domain.review.TimeOfDayResolver
 import com.walkingrpg.shared.domain.review.WalkReview
 import com.walkingrpg.shared.domain.setup.SetupRepository
 import com.walkingrpg.shared.domain.walk.SessionEndReason
@@ -37,15 +36,23 @@ import kotlinx.coroutines.CancellationException
  * 過去全件には作らない（[LlmGenerationConfig.walkReviewSessionLimit]）。
  * 放置で畳まれたセッション（[SessionEndReason.ABANDONED]）も除く：ユーザーが
  * 終えたつもりのない記録で、振り返りとして開く前提のものではない。
+ *
+ * ## 語ったことを残す
+ * 生成できた散歩は `utterance_log` に1行残す（[UtteranceLogRepository]）。
+ * 「その場所についてこの切り口はもう使った」を次の散歩に効かせるためで、
+ * design.md §5「同じ切り口の再使用を禁止」の記録側がここ。
+ * **定型文で凌いだ散歩は書かない**：定型文は切り口を持たないので、
+ * 書くと「言っていない切り口」を使用済みにしてしまう。
  */
 class GenerateWalkReviewRemarkUseCase(
     private val walkSessionRepository: WalkSessionRepository,
     private val getWalkReview: GetWalkReviewUseCase,
+    private val getWalkRemarkContext: GetWalkRemarkContextUseCase,
     private val cacheRepository: LlmCacheRepository,
+    private val utteranceLogRepository: UtteranceLogRepository,
     private val setupRepository: SetupRepository,
     private val clients: LlmClientSelector,
     private val networkStatus: NetworkStatus,
-    private val timeOfDayResolver: TimeOfDayResolver,
     private val clock: Clock,
     private val config: LlmGenerationConfig = LlmGenerationConfig.DEFAULT,
 ) : LlmGenerationQueue {
@@ -69,12 +76,24 @@ class GenerateWalkReviewRemarkUseCase(
         for (session in sessions) {
             // セッションはあるのに振り返りが組めない＝DBを入れ替えた等。数えずに飛ばす。
             val review = getWalkReview(session.id) ?: continue
-            val request = requestFor(review)
+            // 材料の調達（記憶・押し忘れ・切り口）は読み側と同じ1本を通る
+            // （GetWalkRemarkContextUseCase のKDoc「生成側と読み側が同じ1本を通る」）。
+            val context = getWalkRemarkContext(review)
+            val request = WalkReviewRemarkPromptBuilder.request(
+                facts = WalkReviewRemarkFacts.of(review, context),
+                maxTokens = config.walkReviewRemarkMaxTokens,
+            )
             val entry = cacheRepository.entry(remarkCacheKey(session.id))
             if (entry != null && entry.matches(request.promptHash())) {
                 cached++
             } else {
-                pending += PendingRemark(sessionId = session.id, request = request)
+                pending += PendingRemark(
+                    sessionId = session.id,
+                    // 発話履歴の時刻は端末時計ではなく開始時刻から導く（UtteranceLog.sq）。
+                    saidAtMs = session.startedAtMs,
+                    context = context,
+                    request = request,
+                )
             }
         }
         if (pending.isEmpty()) {
@@ -134,6 +153,19 @@ class GenerateWalkReviewRemarkUseCase(
                     createdAtMs = clock.nowMillis(),
                 ),
             )
+            // 語れた散歩だけ履歴を残す（保存の直後＝定型文で終わった散歩は書かない）。
+            // 同じセッションを作り直しても行が増えないよう、置き換えで書く。
+            utteranceLogRepository.replaceSessionUtterances(
+                sessionId = one.sessionId,
+                records = listOf(
+                    UtteranceRecord(
+                        sessionId = one.sessionId,
+                        placeRef = one.context.placeRef,
+                        angle = one.context.angle,
+                        saidAtMs = one.saidAtMs,
+                    ),
+                ),
+            )
             generated++
         }
 
@@ -146,20 +178,19 @@ class GenerateWalkReviewRemarkUseCase(
         )
     }
 
-    private fun requestFor(review: WalkReview): LlmRequest = WalkReviewRemarkPromptBuilder.request(
-        facts = WalkReviewRemarkFacts.of(
-            review = review,
-            timeOfDay = timeOfDayResolver.timeOfDay(review.startedAtMs),
-        ),
-        maxTokens = config.walkReviewRemarkMaxTokens,
-    )
-
     private fun skipped(reason: LlmSkipReason) =
         LlmGenerationOutcome(taskKind = taskKind, skipReason = reason)
 
-    /** 生成待ちの1件（依頼はキャッシュ判定のときに作ってあるので使い回す）。 */
+    /**
+     * 生成待ちの1件（依頼はキャッシュ判定のときに作ってあるので使い回す）。
+     *
+     * [context] を持ち歩くのは、生成できたときに `utterance_log` へ書く
+     * 「どの場所・どの切り口で語ったか」がそこにあるから。
+     */
     private data class PendingRemark(
         val sessionId: Long,
+        val saidAtMs: Long,
+        val context: WalkRemarkContext,
         val request: LlmRequest,
     )
 }

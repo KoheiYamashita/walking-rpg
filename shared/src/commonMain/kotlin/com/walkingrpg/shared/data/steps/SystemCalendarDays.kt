@@ -7,6 +7,7 @@ import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.Instant
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
+import kotlinx.datetime.daysUntil
 import kotlinx.datetime.minus
 import kotlinx.datetime.toLocalDateTime
 
@@ -28,6 +29,15 @@ internal class SystemCalendarDays(
 
     override fun previousDay(day: CalendarDay): CalendarDay =
         LocalDate.parse(day.iso).minus(1, DateTimeUnit.DAY).toCalendarDay()
+
+    // 時刻→暦日の変換だけで、現在時刻は読まない（同じ入力からは必ず同じ日が出る）。
+    override fun day(epochMillis: Long): CalendarDay = Instant.fromEpochMilliseconds(epochMillis)
+        .toLocalDateTime(TimeZone.currentSystemDefault())
+        .date
+        .toCalendarDay()
+
+    override fun daysBetween(from: CalendarDay, until: CalendarDay): Int =
+        LocalDate.parse(from.iso).daysUntil(LocalDate.parse(until.iso))
 }
 
 /** `LocalDate.toString()` は ISO-8601（'YYYY-MM-DD'）。 */

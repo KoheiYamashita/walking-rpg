@@ -1,0 +1,62 @@
+-- パートナーの発話履歴（architecture.md §4「LLM」の utterance_log。design.md §5）。
+--
+-- **真実の源に準ずる追記ログ**（passage から再計算できない）。
+-- 「毎日同じ500m圏で反応するパートナーは、対策なしでは数週間で同じことを言い始める」
+-- （design.md §5）への対策で、「この場所についてこの切り口はもう使った」を覚えておく表。
+-- llm_cache（捨てて生成し直せる導出キャッシュ）とは扱いが違う：捨てると
+-- 「もう言ったこと」が分からなくなり、単調化対策そのものが失われる。
+--
+-- place_ref は**内部キー**（way:<id> / species:<id> / day）。
+-- プロンプトには絶対に出さない（振り返りの一言に位置情報を渡さない規約。
+-- WalkReviewRemarkFacts のKDoc）。ここに置くのは「切り口の再使用禁止」を
+-- 場所ごとに効かせるためだけで、外に出す値ではない。
+--
+-- said_at は端末時計ではなく **walk_session.started_at から導く**
+-- （codex_progress.discovered_at と同じ前例）。読み側（ObserveWalkReviewRemarkUseCase）は
+-- 同じ事実から同じプロンプト指紋を計算し直して llm_cache と突き合わせるので、
+-- 時計を読むと「同じ散歩なのに時間が経つと指紋が変わる」＝毎回定型文＋再生成の課金ループになる。
+--
+-- walk_session への外部キーは張らない：これは「言ったこと」の記録で、
+-- セッション行の生死とは別の事実（DBを入れ替えても、言った事実は言った事実のまま残る）。
+
+CREATE TABLE utterance_log (
+    id         INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    session_id INTEGER NOT NULL,  -- その一言を語った散歩
+    place_ref  TEXT NOT NULL,     -- 内部キー（way:<id> / species:<id> / day）
+    angle      TEXT NOT NULL,     -- RemarkAngle の name
+    said_at    INTEGER NOT NULL   -- epoch millis（walk_session.started_at 由来）
+);
+
+-- 引き方は必ず「この場所で使った切り口」なので、複合索引で1本に効かせる。
+CREATE INDEX utterance_log_place_angle ON utterance_log(place_ref, angle);
+
+-- 同じセッションの一言を作り直しても行が増えないよう、書き込みは
+-- deleteUtterancesBySession → insertUtterance を1トランザクションで回す。
+-- 追記しっぱなしにすると、プロンプトを直して再生成しただけで
+-- 「その場所でその切り口を使った回数」が水増しされる。
+deleteUtterancesBySession:
+DELETE FROM utterance_log
+WHERE session_id = ?;
+
+insertUtterance:
+INSERT INTO utterance_log(session_id, place_ref, angle, said_at)
+VALUES (?, ?, ?, ?);
+
+-- 「この場所で最近使った切り口」（RemarkAngleSelector の除外集合）。
+-- said_at < :beforeMs と session_id != :excludeSessionId の二重の絞りは、
+-- **自分自身と自分より後の一言を数えない**ため：読み側が指紋を計算し直したときに
+-- 集合が変わると、生成済みの一言が「別のプロンプトで作られた」と誤判定される。
+selectRecentUtterancesByPlace:
+SELECT id, session_id, place_ref, angle, said_at
+FROM utterance_log
+WHERE place_ref = :placeRef
+  AND said_at < :beforeMs
+  AND session_id != :excludeSessionId
+ORDER BY said_at DESC, id DESC
+LIMIT :limit;
+
+selectUtterancesBySession:
+SELECT id, session_id, place_ref, angle, said_at
+FROM utterance_log
+WHERE session_id = ?
+ORDER BY id;

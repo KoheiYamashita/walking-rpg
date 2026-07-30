@@ -8,6 +8,7 @@ import com.walkingrpg.shared.domain.review.ConsumePendingReviewUseCase
 import com.walkingrpg.shared.domain.review.ObservePendingReviewUseCase
 import com.walkingrpg.shared.domain.review.RequestReviewForFinishedWalkUseCase
 import com.walkingrpg.shared.domain.setup.IsSetupCompletedUseCase
+import com.walkingrpg.shared.domain.steps.ImportDailyStepsUseCase
 import com.walkingrpg.shared.domain.walk.ObserveFinishedWalksUseCase
 import com.walkingrpg.shared.domain.walk.ObserveIsWalkingUseCase
 import com.walkingrpg.shared.domain.weather.FetchMissingSessionWeatherUseCase
@@ -22,8 +23,9 @@ import kotlinx.coroutines.launch
 /**
  * 画面をまたいで効く「アプリ全体の状態」を持つViewModel。
  *
- * 用途は6つ：記録中の画面ON維持、初回セットアップのゲート、散歩が終わったときの
- * 導出の作り直し、天候の後付け取得、LLM生成のドレイン、そして振り返りを開く合図。
+ * 用途は7つ：記録中の画面ON維持、初回セットアップのゲート、散歩が終わったときの
+ * 導出の作り直し、天候の後付け取得、歩数の取り込み（押し忘れ救済）、
+ * LLM生成のドレイン、そして振り返りを開く合図。
  * どれも画面の切り替えとは無関係なアプリ全体の関心事なので、各画面のViewModelに配らず
  * ここ1箇所で持つ（二重管理を避ける。architecture.md §2 の役割規約どおりUseCaseしか知らない）。
  */
@@ -33,6 +35,7 @@ class AppViewModel(
     private val observeFinishedWalks: ObserveFinishedWalksUseCase,
     private val recomputeAfterWalk: RecomputeAfterWalkUseCase,
     private val fetchMissingSessionWeather: FetchMissingSessionWeatherUseCase,
+    private val importDailySteps: ImportDailyStepsUseCase,
     private val drainLlmGenerationQueue: DrainLlmGenerationQueueUseCase,
     private val requestReviewForFinishedWalk: RequestReviewForFinishedWalkUseCase,
     observePendingReview: ObservePendingReviewUseCase,
@@ -111,6 +114,10 @@ class AppViewModel(
         // 次の散歩までに地点フレーバーを揃えておける（design.md §7「路上で待たせたら負け」）。
         viewModelScope.launch {
             fetchSessionWeather()
+            // 歩数の取り込み（design.md §3「開始を押し忘れた日」）。文章の生成より前に置くのは、
+            // 「昨日はけっこう歩いたんだね」が一言の材料になるから（GetWalkRemarkContextUseCase）。
+            // 起動のたびに走らせても1日1行に収束する（ImportDailyStepsUseCase は冪等）。
+            importSteps()
             drainLlmGeneration()
         }
         // 散歩が終わったら passage → way_growth を作り直す（architecture.md §5「帰宅後」）。
@@ -203,6 +210,28 @@ class AppViewModel(
             throw cancellation
         } catch (error: Throwable) {
             _weatherError.value = error.message ?: "天候の取得に失敗しました"
+        }
+    }
+
+    /**
+     * 歩数計から昨日・今日を取り込む（design.md §3「開始を押し忘れた日」・issue #7）。
+     *
+     * **失敗は握る**：歩数は「歩いたのに損した」を作らないための救済で、
+     * 取れなくても散歩の記録（真実の源）に欠けは出ない
+     * （architecture.md §8「権限が取れない場合は機能ごと落とせる設計」）。
+     * 権限が無ければ歩数計側が `null` を返して何も起きない
+     * （権限要求のUIは #20 のスコープ）。
+     *
+     * 状態としても残さないのは、これが「取れたら嬉しい」情報だから：
+     * 取れなかったこと自体は正常な流れで、次の起動でやり直せる（取り込みは冪等）。
+     */
+    private suspend fun importSteps() {
+        try {
+            importDailySteps()
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (error: Throwable) {
+            // 歩数が取れなかっただけ。次の起動でやり直す。
         }
     }
 

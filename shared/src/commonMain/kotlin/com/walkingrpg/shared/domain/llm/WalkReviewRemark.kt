@@ -28,6 +28,13 @@ import kotlin.math.round
  * さらに狭い）。振り返りの一言は「今日の散歩がどんなだったか」であって場所の説明ではないので、
  * 位置を外に出す理由がない。道の名前も渡さない：無名の生活道路が大半で、
  * 名前がある道だけ特別扱いされると「どこを歩いたか」が外に出る方向に働く。
+ * 記憶（[memory]）が入っても同じで、載るのは「この道」「どれくらい前か」だけ
+ * ＝`utterance_log.place_ref`（`way:<id>` 等の内部キー）も渡さない。
+ *
+ * ## ブランク（歩かなかった期間）は渡さない
+ * 「前回の散歩から何日空いたか」に相当する事実は**この型に存在しない**。
+ * 禁止文（[WalkReviewRemarkPromptBuilder.systemPrompt]）だけでなくデータの形でも守るのは、
+ * 材料があると「久しぶりだね」の方向に滲むから（design.md §2「負のフレームを作らない」）。
  *
  * @param distanceKmText 距離を「2.3」のような文字列に丸めたもの。数値のまま渡さないのは、
  *  同じ散歩で毎回同じ指紋（[PromptHash]）にするため（浮動小数の表記揺れを避ける）。
@@ -39,6 +46,11 @@ import kotlin.math.round
  * @param foreshadowTexts 予兆が立った種の予兆文（`Species.foreshadowText`）。
  *  **種名は渡さない**：まだ未発見なので、名前を渡した瞬間に予兆が予告になる（design.md §4.4）。
  * @param weather 天候（未取得なら `null`＝触れさせない）。
+ * @param angle 今日の切り口（design.md §5「同じ切り口の再使用を禁止」）。
+ *  1つだけ渡して「ここを中心に書く」と指示する（禁止リストは渡さない。
+ *  理由は [RemarkAngle] のKDoc）。
+ * @param memory この道の記憶（無ければ `null`）。
+ * @param stepsMention 歩数だけ残っている日への言及（無ければ `null`）。
  */
 data class WalkReviewRemarkFacts(
     val timeOfDay: TimeOfDay,
@@ -49,16 +61,25 @@ data class WalkReviewRemarkFacts(
     val discoveredSpeciesNames: List<String> = emptyList(),
     val foreshadowTexts: List<String> = emptyList(),
     val weather: WeatherCondition? = null,
+    // 既定値は置かない：切り口は「毎回決めるもの」で、省略できると
+    // 生成側と読み側で別の値が入る（＝指紋が食い違う）道が生まれる。
+    val angle: RemarkAngle,
+    val memory: WalkMemory? = null,
+    val stepsMention: StepsMention? = null,
 ) {
     companion object {
         /**
-         * 振り返りから、渡してよい事実だけを抜き出す。
+         * 振り返りと、その外から集めた材料から、渡してよい事実だけを抜き出す。
          *
-         * @param timeOfDay 出発時刻の時間帯（`TimeOfDayResolver` が出す）。
+         * **変換の口はここ1つだけ**にしてある：生成側と読み側が別の道で事実を組むと、
+         * プロンプト指紋が食い違って生成済みの一言が使われなくなる
+         * （[GetWalkRemarkContextUseCase] のKDoc）。
+         *
+         * @param context 記憶・押し忘れ・切り口・時間帯（[GetWalkRemarkContextUseCase] が調達）。
          */
-        fun of(review: WalkReview, timeOfDay: TimeOfDay): WalkReviewRemarkFacts =
+        fun of(review: WalkReview, context: WalkRemarkContext): WalkReviewRemarkFacts =
             WalkReviewRemarkFacts(
-                timeOfDay = timeOfDay,
+                timeOfDay = context.timeOfDay,
                 distanceKmText = review.distanceKm.toOneDecimal(),
                 durationMinutes = (review.durationMs / 60_000L).toInt(),
                 grownWayCount = review.grownWays.size,
@@ -69,6 +90,9 @@ data class WalkReviewRemarkFacts(
                 foreshadowTexts = review.approachedSpecies.map { it.foreshadowText },
                 // 天候不明で確定した行は「取れていない」と同じ扱いにする（触れさせない）。
                 weather = review.weather?.takeIf { it.isKnown }?.condition,
+                angle = context.angle,
+                memory = context.memory,
+                stepsMention = context.stepsMention,
             )
     }
 }
@@ -92,11 +116,14 @@ object WalkReviewRemarkPromptBuilder {
         守ること:
         - 日本語で2〜3文、合わせて100文字程度まで。
         - 静かなトーンで、褒めすぎない。感嘆符は使わない。
-        - 責めない・急かさない・次を指示しない。「もっと歩こう」とは言わない。
+        - 責めない・急かさない・催促しない・次を指示しない。「もっと歩こう」とは言わない。
         - 渡された事実だけを踏まえる。歩いた場所・地名・施設・歴史・季節の断定はしない。
         - 実在の場所の事実は書かない。調べれば真偽が決まることは一切書かない。
         - 数字を並べない。距離や本数をそのまま書き写さず、様子として触れる。
         - 予兆の手がかりは、それが何の生き物かを当てて書かない（まだ分かっていない）。
+        - 歩かなかった日・散歩の間隔・空いた期間には一切触れない。
+        - 「久しぶり」「しばらく」「ようやく」のような、間隔をほのめかす言い方をしない。
+        - 「今日はこの切り口を中心に書く」で指定された話題から書く。他は無理に詰め込まない。
         - 出力はJSONのみ。{"remark": "本文"} の形だけを返し、前後に説明やコードブロックを付けない。
     """.trimIndent()
 
@@ -126,6 +153,19 @@ object WalkReviewRemarkPromptBuilder {
             append('\n')
             append("天候: ").append(condition.label())
         }
+        // 記憶は「この道」「どれくらい前か」だけ。道の名前も内部キーも出さない。
+        facts.memory?.let { memory ->
+            append('\n')
+            append("この道の記憶: ").append(memory.label())
+        }
+        // 歩数は粗い量だけ（数値は渡さない。StepsMention のKDoc）。
+        facts.stepsMention?.let { mention ->
+            append('\n')
+            append("記録は残っていないが歩いた日: ").append(mention.label())
+        }
+        // 切り口は最後に置く（事実を読んだあとの指示として効かせる）。
+        append('\n')
+        append("今日はこの切り口を中心に書く: ").append(facts.angle.label())
     }
 
     /**
@@ -230,6 +270,64 @@ private fun GrowthStage?.stageLabel(): String = when (this) {
     GrowthStage.SHRUB -> "低木"
     GrowthStage.TREE -> "木"
     GrowthStage.CREATURE -> "生き物が住む道"
+}
+
+/**
+ * プロンプトに書く切り口の呼び名（「今日はこの切り口を中心に書く」の値）。
+ * 内部の enum 名（`utterance_log.angle` に入る値）はそのまま出さない。
+ */
+private fun RemarkAngle.label(): String = when (this) {
+    RemarkAngle.DISCOVERY -> "今日はじめて出会ったもの"
+    RemarkAngle.FORESHADOW -> "見かけた手がかり"
+    RemarkAngle.MEMORY -> "この道の記憶"
+    RemarkAngle.GROWTH -> "道の育ち"
+    RemarkAngle.STEPS -> "記録は残っていないが歩いた日"
+    RemarkAngle.WEATHER -> "天候"
+    RemarkAngle.TIME_OF_DAY -> "その時間帯の様子"
+    RemarkAngle.DISTANCE -> "歩いた道のりの様子"
+}
+
+/**
+ * プロンプトに書く記憶の言い方。
+ *
+ * 日数は[粗い言い方][roughDaysAgoText]に丸める：一言に数字を書かせないためと、
+ * 「43日前」のような精度が思い出の語り方として不自然なため。
+ */
+private fun WalkMemory.label(): String = when (depth) {
+    WalkMemoryDepth.FIRST_VISIT -> "この道を初めて歩いたのは${roughDaysAgoText(daysAgo)}"
+    WalkMemoryDepth.SEASON_AGO -> "この道は${roughDaysAgoText(daysAgo)}にも歩いた"
+    WalkMemoryDepth.MONTH_AGO -> "この道は${roughDaysAgoText(daysAgo)}にも歩いた"
+    WalkMemoryDepth.RECENT -> "この道は${roughDaysAgoText(daysAgo)}にも歩いた"
+}
+
+/** プロンプトに書く歩数の言い方（数値は出さない）。 */
+private fun StepsMention.label(): String =
+    "${roughDaysAgoText(daysAgo)}、${amount.label()}歩いた"
+
+/** 歩数の粗い量の呼び名。 */
+private fun StepsAmount.label(): String = when (this) {
+    StepsAmount.SOME -> "すこし"
+    StepsAmount.GOOD -> "けっこう"
+    StepsAmount.MANY -> "たくさん"
+}
+
+/**
+ * 「何日前」を粗い言い方に丸める。
+ *
+ * 段の切り方は [WalkRemarkConfig] の閾値とは独立でよい（あちらは「どの記憶を選ぶか」、
+ * こちらは「選んだものをどう言うか」）。数値をそのまま出さないのは、
+ * 一言に数字を並べさせないため（[WalkReviewRemarkPromptBuilder.systemPrompt]）。
+ */
+private fun roughDaysAgoText(daysAgo: Int): String = when {
+    daysAgo <= 1 -> "昨日"
+    daysAgo <= 3 -> "数日前"
+    daysAgo <= 10 -> "一週間ほど前"
+    daysAgo <= 20 -> "半月ほど前"
+    daysAgo <= 45 -> "ひと月ほど前"
+    daysAgo <= 100 -> "二、三ヶ月前"
+    daysAgo <= 200 -> "半年ほど前"
+    daysAgo <= 400 -> "一年ほど前"
+    else -> "何年か前"
 }
 
 /** 小数第1位まで（「2.3」）。指紋を安定させるため、桁を必ず1つ出す。 */

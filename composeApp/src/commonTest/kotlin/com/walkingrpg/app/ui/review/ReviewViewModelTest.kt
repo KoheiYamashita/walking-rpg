@@ -5,6 +5,7 @@ import com.walkingrpg.shared.domain.codex.GetCodexUseCase
 import com.walkingrpg.shared.domain.codex.Species
 import com.walkingrpg.shared.domain.growth.GrowthStage
 import com.walkingrpg.shared.domain.llm.GetSpeciesDescriptionUseCase
+import com.walkingrpg.shared.domain.llm.GetWalkRemarkContextUseCase
 import com.walkingrpg.shared.domain.llm.LlmCacheEntry
 import com.walkingrpg.shared.domain.llm.LlmGenerationConfig
 import com.walkingrpg.shared.domain.llm.LlmTaskKind
@@ -122,11 +123,24 @@ class ReviewViewModelTest {
             catalog = listOf(species),
         )
 
+        /**
+         * 一言の材料（記憶・押し忘れ・切り口）の調達（issue #16）。
+         * 本番と同じく**読み側もここを通る**＝指紋の計算が生成側と揃う。
+         */
+        val getWalkRemarkContext = GetWalkRemarkContextUseCase(
+            walkSessionRepository = SingleSessionRepository(session),
+            passageRepository = StubPassageRepository(),
+            stepImportRepository = EmptyStepImportRepository(),
+            utteranceLogRepository = FakeUtteranceLogRepository(),
+            timeOfDayResolver = FixedTimeOfDayResolver(),
+            calendarDays = UtcCalendarDays(),
+        )
+
         fun viewModel() = ReviewViewModel(
             getWalkReview = getWalkReview,
             observeWalkReviewRemark = ObserveWalkReviewRemarkUseCase(
                 cacheRepository = cache,
-                timeOfDayResolver = FixedTimeOfDayResolver(),
+                getWalkRemarkContext = getWalkRemarkContext,
             ),
             observeSessionWeather = ObserveSessionWeatherUseCase(weather),
         )
@@ -135,11 +149,11 @@ class ReviewViewModelTest {
     private fun cacheKey() = "WALK_REVIEW_REMARK:session:$sessionId"
 
     /** 「その振り返りに対して生成済み」の行（指紋の作り方は生成側と同じ）。 */
-    private fun generatedEntry(review: WalkReview, text: String) = LlmCacheEntry(
+    private suspend fun Fixture.generatedEntry(review: WalkReview, text: String) = LlmCacheEntry(
         cacheKey = cacheKey(),
         kind = LlmTaskKind.WALK_REVIEW_REMARK,
         promptHash = WalkReviewRemarkPromptBuilder.promptHash(
-            facts = WalkReviewRemarkFacts.of(review, TimeOfDay.EVENING),
+            facts = WalkReviewRemarkFacts.of(review, getWalkRemarkContext(review)),
             maxTokens = LlmGenerationConfig.DEFAULT.walkReviewRemarkMaxTokens,
         ),
         text = text,
@@ -173,7 +187,7 @@ class ReviewViewModelTest {
         val numbersBefore = viewModel.uiState.value.review
         val review = assertNotNull(numbersBefore)
 
-        fixture.cache.save(generatedEntry(review, "おかえり。木がひとつ増えたね。"))
+        fixture.cache.save(fixture.generatedEntry(review, "おかえり。木がひとつ増えたね。"))
         advanceUntilIdle()
 
         val state = viewModel.uiState.value
@@ -232,7 +246,7 @@ class ReviewViewModelTest {
         viewModel.onSessionSelected(sessionId)
         advanceUntilIdle()
         val review = assertNotNull(viewModel.uiState.value.review)
-        fixture.cache.save(generatedEntry(review.copy(weather = weather), "空が広い日だったね。"))
+        fixture.cache.save(fixture.generatedEntry(review.copy(weather = weather), "空が広い日だったね。"))
         advanceUntilIdle()
         assertFalse(
             viewModel.uiState.value.remark?.isGenerated == true,
@@ -267,7 +281,7 @@ class ReviewViewModelTest {
         viewModel.onSessionSelected(sessionId)
         advanceUntilIdle()
         val review = assertNotNull(viewModel.uiState.value.review)
-        fixture.cache.save(generatedEntry(review, "おかえり。"))
+        fixture.cache.save(fixture.generatedEntry(review, "おかえり。"))
         advanceUntilIdle()
 
         viewModel.onSessionSelected(sessionId)

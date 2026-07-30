@@ -60,6 +60,17 @@ WHERE ended_at IS NOT NULL
 ORDER BY ended_at DESC, id DESC
 LIMIT :limit;
 
+-- 「その日に散歩の記録があるか」を数日ぶんだけ引く（押し忘れの判定。issue #16）。
+-- step_import に行がある日のうち「walk_session が1件もない日」だけが押し忘れなので、
+-- 判定にはセッションの開始時刻が要る。全件（selectSessionSummaries）を舐めないのは、
+-- 見たいのが直近数日だけだから。
+-- 記録中・放置のセッションも含める：開始を押した日は押し忘れではない。
+selectSessionsStartedBetween:
+SELECT id, started_at, ended_at, end_reason
+FROM walk_session
+WHERE started_at >= :fromMs AND started_at < :untilMs
+ORDER BY started_at;
+
 selectSessionSummaries:
 SELECT
     s.id,

@@ -6,6 +6,8 @@ import com.walkingrpg.shared.domain.codex.RecentCodexRepository
 import com.walkingrpg.shared.domain.llm.LlmCacheEntry
 import com.walkingrpg.shared.domain.llm.LlmCacheRepository
 import com.walkingrpg.shared.domain.llm.LlmTaskKind
+import com.walkingrpg.shared.domain.llm.UtteranceLogRepository
+import com.walkingrpg.shared.domain.llm.UtteranceRecord
 import com.walkingrpg.shared.domain.matching.Passage
 import com.walkingrpg.shared.domain.matching.PassageRepository
 import com.walkingrpg.shared.domain.matching.SessionVisit
@@ -13,6 +15,10 @@ import com.walkingrpg.shared.domain.osm.OsmMasterCounts
 import com.walkingrpg.shared.domain.osm.OsmMasterRepository
 import com.walkingrpg.shared.domain.osm.Poi
 import com.walkingrpg.shared.domain.osm.Way
+import com.walkingrpg.shared.domain.steps.CalendarDay
+import com.walkingrpg.shared.domain.steps.CalendarDays
+import com.walkingrpg.shared.domain.steps.StepImport
+import com.walkingrpg.shared.domain.steps.StepImportRepository
 import com.walkingrpg.shared.domain.walk.LocationSample
 import com.walkingrpg.shared.domain.walk.SessionEndReason
 import com.walkingrpg.shared.domain.walk.WalkSession
@@ -24,6 +30,13 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.map
+import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.Instant
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.daysUntil
+import kotlinx.datetime.minus
+import kotlinx.datetime.toLocalDateTime
 
 /**
  * 振り返り画面のテスト用差し替え。
@@ -55,7 +68,67 @@ internal class SingleSessionRepository(
     override suspend fun samples(sessionId: Long): List<LocationSample> = emptyList()
     override suspend fun recentFinishedSessions(limit: Int): List<WalkSession> = listOfNotNull(session)
 
+    // 押し忘れの判定（issue #16）が引く口。この1件だけを持っているので範囲で絞って返す
+    override suspend fun sessionsStartedBetween(fromMs: Long, untilMs: Long): List<WalkSession> =
+        listOfNotNull(session).filter { it.startedAtMs >= fromMs && it.startedAtMs < untilMs }
+
     private fun notUsed(): Nothing = error("振り返り画面では使わない")
+}
+
+/** 歩数の取り込みが1件も無い `step_import`（振り返り画面では材料にしない）。 */
+internal class EmptyStepImportRepository : StepImportRepository {
+    override suspend fun upsert(stepImport: StepImport) = Unit
+    override suspend fun stepImport(day: CalendarDay): StepImport? = null
+    override suspend fun stepImports(): List<StepImport> = emptyList()
+}
+
+/** 発話履歴のインメモリ版（issue #16）。 */
+internal class FakeUtteranceLogRepository : UtteranceLogRepository {
+
+    private val rows = mutableListOf<UtteranceRecord>()
+
+    override suspend fun recentUtterances(
+        placeRef: String,
+        beforeMs: Long,
+        excludeSessionId: Long,
+        limit: Int,
+    ): List<UtteranceRecord> = rows
+        .filter { it.placeRef == placeRef && it.saidAtMs < beforeMs && it.sessionId != excludeSessionId }
+        .sortedByDescending { it.saidAtMs }
+        .take(limit)
+
+    override suspend fun replaceSessionUtterances(
+        sessionId: Long,
+        records: List<UtteranceRecord>,
+    ) {
+        rows.removeAll { it.sessionId == sessionId }
+        rows += records
+    }
+
+    override suspend fun utterances(sessionId: Long): List<UtteranceRecord> =
+        rows.filter { it.sessionId == sessionId }
+}
+
+/**
+ * 暦日の計算（UTC固定）。
+ *
+ * 画面のテストで見たいのは差し込みの順序なので、ずれない固定のゾーンで足りる。
+ * `today()` を持たせていないのは、一言の材料が現在時刻を使わないことの裏返し
+ * （`GetWalkRemarkContextUseCase` のKDoc）。
+ */
+internal class UtcCalendarDays : CalendarDays {
+
+    override fun today(): CalendarDay = error("一言の材料に「今日」は使わない")
+
+    override fun previousDay(day: CalendarDay): CalendarDay =
+        LocalDate.parse(day.iso).minus(1, DateTimeUnit.DAY).let { CalendarDay(it.toString()) }
+
+    override fun day(epochMillis: Long): CalendarDay = CalendarDay(
+        Instant.fromEpochMilliseconds(epochMillis).toLocalDateTime(TimeZone.UTC).date.toString(),
+    )
+
+    override fun daysBetween(from: CalendarDay, until: CalendarDay): Int =
+        LocalDate.parse(from.iso).daysUntil(LocalDate.parse(until.iso))
 }
 
 /** 通過を直接置ける [PassageRepository]。 */

@@ -105,6 +105,22 @@ internal class WalkSessionRepositoryImpl(
             }
         }
 
+    override suspend fun sessionsStartedBetween(
+        fromMs: Long,
+        untilMs: Long,
+    ): List<WalkSession> = withContext(dispatcher) {
+        sessions.selectSessionsStartedBetween(fromMs = fromMs, untilMs = untilMs)
+            .executeAsList()
+            .map { row ->
+                WalkSession(
+                    id = row.id,
+                    startedAtMs = row.started_at,
+                    endedAtMs = row.ended_at,
+                    endReason = row.end_reason.toEndReason(),
+                )
+            }
+    }
+
     override suspend fun session(sessionId: Long): WalkSession? = withContext(dispatcher) {
         sessions.selectSession(sessionId).executeAsOneOrNull()?.let { row ->
             WalkSession(

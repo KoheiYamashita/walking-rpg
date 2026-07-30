@@ -33,7 +33,9 @@ enum class LlmTaskKind {
      * 生成できたら画面に差し込む（architecture.md §5「数値は即時、文章は遅延OK」）。
      *
      * 記憶の参照（1ヶ月前のログ）と単調化対策（`utterance_log` による切り口の再使用禁止。
-     * design.md §5）は #16 の担当で、ここにはまだ無い。
+     * design.md §5）もこの種別に入る（issue #16）。材料の調達は
+     * [GetWalkRemarkContextUseCase] で、**生成側と読み側が同じ1本を通る**
+     * （通らないと `prompt_hash` が食い違って毎回作り直しになる）。
      */
     WALK_REVIEW_REMARK,
 }
