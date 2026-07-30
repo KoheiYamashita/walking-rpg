@@ -204,4 +204,8 @@ internal class FakeWalkSessionRepository : WalkSessionRepository {
     ): List<WalkSession> = sessionsState.value
         .filter { it.startedAtMs >= fromMs && it.startedAtMs < untilMs }
         .sortedBy { it.startedAtMs }
+
+    // 本実装（SQL の MIN）と同じ：1件も無ければ null
+    override suspend fun oldestSessionStartedAtMs(): Long? =
+        sessionsState.value.minOfOrNull { it.startedAtMs }
 }

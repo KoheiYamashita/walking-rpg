@@ -8,6 +8,7 @@ import com.walkingrpg.shared.platform.AndroidLocationProvider
 import com.walkingrpg.shared.platform.AndroidNetworkStatus
 import com.walkingrpg.shared.platform.AndroidSecureStorage
 import com.walkingrpg.shared.platform.AndroidSessionKeeper
+import com.walkingrpg.shared.platform.AndroidSnapshotImageStore
 import com.walkingrpg.shared.platform.AndroidWalkNotifier
 import com.walkingrpg.shared.platform.AppSettings
 import com.walkingrpg.shared.platform.AndroidHaptics
@@ -21,6 +22,7 @@ import com.walkingrpg.shared.platform.LocationPermissionController
 import com.walkingrpg.shared.platform.LocationProvider
 import com.walkingrpg.shared.platform.SecureStorage
 import com.walkingrpg.shared.platform.SessionKeeper
+import com.walkingrpg.shared.platform.SnapshotImageStore
 import com.walkingrpg.shared.platform.WalkNotifier
 import org.koin.android.ext.koin.androidContext
 import org.koin.core.module.Module
@@ -51,6 +53,10 @@ actual val platformModule: Module = module {
 
     // --- LLM生成基盤（issue #14） ---
     single<NetworkStatus> { AndroidNetworkStatus(androidContext()) }
+
+    // --- 月次スナップショット（issue #17） ---
+    // 画像は filesDir 配下（Auto Backup の既定対象）。cacheDir には置かない
+    single<SnapshotImageStore> { AndroidSnapshotImageStore(androidContext()) }
 
     // --- 設定・キー保管（issue #6） ---
     single<SecureStorage> { AndroidSecureStorage(androidContext()) }

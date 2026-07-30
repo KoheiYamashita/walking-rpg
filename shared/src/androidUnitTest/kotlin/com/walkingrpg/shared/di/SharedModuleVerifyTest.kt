@@ -1,6 +1,7 @@
 package com.walkingrpg.shared.di
 
 import android.content.Context
+import com.walkingrpg.shared.domain.snapshot.MonthlySnapshotRenderer
 import io.ktor.client.engine.HttpClientEngine
 import org.koin.core.annotation.KoinExperimentalAPI
 import org.koin.test.verify.verify
@@ -39,7 +40,16 @@ class SharedModuleVerifyTest {
          *   プラットフォーム既定のエンジンを内部で選ぶ。`verify()` は定義の型
          *   （＝`HttpClient`）のコンストラクタ引数を見るので、DIでは渡していない
          *   エンジンを「未提供」と誤検知する
+         * - [MonthlySnapshotRenderer]: 描画APIがCompose側にしか無いので、
+         *   **UI層（`appModule`）が実装を登録する**唯一のポート
+         *   （[MonthlySnapshotRenderer] のKDoc）。`sharedModule` 単体では解決できないのが
+         *   正しい状態で、アプリが実際に組む形（`sharedModule` + `appModule`）での
+         *   解決は composeApp 側の `AppModuleVerifyTest` が見ている
          */
-        val EXTRA_TYPES = listOf(Context::class, HttpClientEngine::class)
+        val EXTRA_TYPES = listOf(
+            Context::class,
+            HttpClientEngine::class,
+            MonthlySnapshotRenderer::class,
+        )
     }
 }

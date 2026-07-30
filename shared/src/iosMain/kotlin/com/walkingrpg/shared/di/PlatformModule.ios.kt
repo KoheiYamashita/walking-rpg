@@ -16,11 +16,13 @@ import com.walkingrpg.shared.platform.IosLocationProvider
 import com.walkingrpg.shared.platform.IosNetworkStatus
 import com.walkingrpg.shared.platform.IosSecureStorage
 import com.walkingrpg.shared.platform.IosSessionKeeper
+import com.walkingrpg.shared.platform.IosSnapshotImageStore
 import com.walkingrpg.shared.platform.IosWalkNotifier
 import com.walkingrpg.shared.platform.LocationPermissionController
 import com.walkingrpg.shared.platform.LocationProvider
 import com.walkingrpg.shared.platform.SecureStorage
 import com.walkingrpg.shared.platform.SessionKeeper
+import com.walkingrpg.shared.platform.SnapshotImageStore
 import com.walkingrpg.shared.platform.WalkNotifier
 import org.koin.core.module.Module
 import org.koin.dsl.module
@@ -47,6 +49,10 @@ actual val platformModule: Module = module {
 
     // --- LLM生成基盤（issue #14）。実装は #3 で NWPathMonitor に差し替える ---
     single<NetworkStatus> { IosNetworkStatus() }
+
+    // --- 月次スナップショット（issue #17） ---
+    // 画像は NSDocumentDirectory 配下（iCloudバックアップの既定対象）
+    single<SnapshotImageStore> { IosSnapshotImageStore() }
 
     // --- 設定・キー保管（issue #6） ---
     single<SecureStorage> { IosSecureStorage() }

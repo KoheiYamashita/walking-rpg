@@ -1,5 +1,7 @@
 package com.walkingrpg.shared.domain.llm
 
+import com.walkingrpg.shared.domain.snapshot.CalendarMonth
+import com.walkingrpg.shared.domain.snapshot.MonthRange
 import com.walkingrpg.shared.domain.steps.CalendarDay
 import com.walkingrpg.shared.domain.steps.CalendarDays
 import com.walkingrpg.shared.domain.steps.StepImport
@@ -95,6 +97,14 @@ internal class UtcCalendarDays : CalendarDays {
 
     override fun daysBetween(from: CalendarDay, until: CalendarDay): Int =
         LocalDate.parse(from.iso).daysUntil(LocalDate.parse(until.iso))
+
+    // 月の計算（issue #17）は一言の材料ではない。呼ばれたらテストが落ちる
+    override fun monthOf(day: CalendarDay): CalendarMonth = error("一言の材料に月は使わない")
+
+    override fun previousMonth(month: CalendarMonth): CalendarMonth =
+        error("一言の材料に月は使わない")
+
+    override fun monthRange(month: CalendarMonth): MonthRange = error("一言の材料に月は使わない")
 }
 
 /** その日のUTC正午（暦日の境界に寄らない時刻）。 */
