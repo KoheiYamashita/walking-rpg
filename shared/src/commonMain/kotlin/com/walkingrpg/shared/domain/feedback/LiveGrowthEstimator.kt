@@ -5,6 +5,7 @@ import com.walkingrpg.shared.domain.growth.WayGrowthCalculator
 import com.walkingrpg.shared.domain.map.GeoPoint
 import com.walkingrpg.shared.domain.matching.MapMatcher
 import com.walkingrpg.shared.domain.matching.MapMatchingConfig
+import com.walkingrpg.shared.domain.matching.PassageBoundary
 import com.walkingrpg.shared.domain.osm.GeoDistance
 import com.walkingrpg.shared.domain.osm.Way
 import com.walkingrpg.shared.domain.walk.LocationSample
@@ -39,13 +40,14 @@ import com.walkingrpg.shared.domain.walk.LocationSample
  * ## 判定
  *
  * サンプルを1件ずつ畳んでいく**純粋な状態機械**。[MapMatcher] の簡略版で、
- * スナップ規則そのもの（[MapMatcher.nearestWayId]）は本計算と共有する
+ * スナップ規則（[MapMatcher.snapWayId]）と通過の切れ目
+ * （[com.walkingrpg.shared.domain.matching.PassageBoundary]）は本計算と共有する
  * ＝閾値を変えたときに歩行中と帰宅後がずれない。
  *
  * 1. 精度フィルタ（[MapMatchingConfig.maxAccuracyMeters]）
  * 2. 速度フィルタ（後述。本計算とは形が違う）
- * 3. 最寄りwayへスナップ（[MapMatcher.nearestWayId] をそのまま使う）
- * 4. 同じwayが [MapMatchingConfig.minRunSamples] 件続いたら「1回通った」と見込む
+ * 3. wayへスナップ（[MapMatcher.snapWayId]。直前のwayへの粘着も同じ規則で効く）
+ * 4. 同じ通過の中で [MapMatchingConfig.minRunSamples] 件たまったら「1回通った」と見込む
  * 5. 見込みの通過回数で段階が上がるなら [WalkEvent.GrowthStageUp] を1件返す
  *
  * ### 本計算との違い（意図的な簡略化）
@@ -55,11 +57,8 @@ import com.walkingrpg.shared.domain.walk.LocationSample
  *   [MapMatchingConfig.maxWalkingSpeedMps] を超えたサンプルを1件ずつ捨てる。
  *   GPSの飛び1点も一緒に落ちるが、落ちて困るのは振動1回ぶんだけ（記録は無傷）。
  * - **ノイズ均し**：本計算は前後の塊を見て単発の飛びを埋め戻す。ここでは
- *   「[MapMatchingConfig.minRunSamples] 件続くまで数えない」だけにする。
+ *   「[MapMatchingConfig.minRunSamples] 件たまるまで数えない」だけにする。
  *   埋め戻しの代わりに"数え控える"側に倒すので、鳴りすぎない方向にずれる。
- * - **通過の切れ目**：同じwayに乗り続けているあいだは1回しか数えない。
- *   別のwayに移る／[MapMatchingConfig.maxPassageGapMs] 以上スナップが空くと次の1回になる
- *   （ここは本計算と同じ規則）。
  */
 data class LiveGrowthEstimator(
     /** 判定中の散歩。返すイベントに乗せる。 */
@@ -77,12 +76,15 @@ data class LiveGrowthEstimator(
     private val lastAcceptedSample: LocationSample? = null,
     /** いま乗っているway（スナップできていなければ直前のway）。 */
     val currentWayId: Long? = null,
-    /** 最後にwayへスナップできたサンプルの時刻。通過の切れ目の判定に使う。 */
-    private val lastSnappedAtMs: Long? = null,
-    /** [currentWayId] に連続してスナップした件数。 */
-    private val currentRunSamples: Int = 0,
-    /** いまの塊をすでに「1回通った」として数えたか。 */
-    private val isCurrentRunCounted: Boolean = false,
+    /**
+     * 道ごとの「いま開いている通過」。
+     *
+     * 単一の塊ではなく**道ごと**に持つのは、交差点で A→B→A と数秒で戻る形を
+     * Aの1回に併合するため（`PassageBoundary`）。Bに寄り道しているあいだも
+     * Aの塊は開いたままなので、戻ってきたときに数え直さない。
+     * 1回の散歩で通る道は20〜40本（`GrowthConfig`）なので、増え続けても軽い。
+     */
+    private val openRuns: Map<Long, OpenRun> = emptyMap(),
 ) {
 
     /**
@@ -96,33 +98,38 @@ data class LiveGrowthEstimator(
         if (isTooFast(sample)) return Update(this)
 
         val accepted = copy(lastAcceptedSample = sample)
-        val wayId = MapMatcher.nearestWayId(sample.toGeoPoint(), ways, matchingConfig)
+        // 直前のwayへの粘着（ヒステリシス）も本計算と同じ規則で効かせる。
+        val wayId = MapMatcher.snapWayId(sample.toGeoPoint(), ways, matchingConfig, currentWayId)
         // どの道でもないサンプルは塊を切らない（本計算と同じ：木の下で1点外しただけで
         // 1本の道が2回通ったことにならないように）
         if (wayId == null) return Update(accepted)
 
-        // 同じwayでも、前にスナップしてから間が空いたら別の通過（本計算と同じ規則）。
-        // 「同じ道を往復した」「途中で測位が落ちた」がここで分かれる。
-        val isGapped = lastSnappedAtMs?.let {
-            sample.timestampMs - it > matchingConfig.maxPassageGapMs
-        } ?: false
-        val isSameRun = wayId == currentWayId && !isGapped
-        val advanced = accepted.copy(
-            lastSnappedAtMs = sample.timestampMs,
-            currentWayId = wayId,
-            currentRunSamples = if (isSameRun) currentRunSamples + 1 else 1,
-            isCurrentRunCounted = isSameRun && isCurrentRunCounted,
+        // 「ここから新しい通過か」は本計算と同じ判定を通す（PassageBoundary）。
+        val previous = openRuns[wayId]
+        val isNewPassage = PassageBoundary.isNewPassage(
+            wayId = wayId,
+            timestampMs = sample.timestampMs,
+            currentWayId = currentWayId,
+            lastSeenOnWayMs = previous?.lastSeenMs,
+            config = matchingConfig,
         )
-        if (advanced.isCurrentRunCounted || advanced.currentRunSamples < matchingConfig.minRunSamples) {
-            return Update(advanced)
+        val run = if (isNewPassage || previous == null) {
+            OpenRun(lastSeenMs = sample.timestampMs, samples = 1, isCounted = false)
+        } else {
+            previous.copy(lastSeenMs = sample.timestampMs, samples = previous.samples + 1)
         }
+        val advanced = accepted.copy(
+            currentWayId = wayId,
+            openRuns = openRuns + (wayId to run),
+        )
+        if (run.isCounted || run.samples < matchingConfig.minRunSamples) return Update(advanced)
 
         // ここで初めて「この道を1回通った」と見込む。
         val before = passCounts[wayId] ?: 0
         val after = before + 1
         val counted = advanced.copy(
             passCounts = passCounts + (wayId to after),
-            isCurrentRunCounted = true,
+            openRuns = advanced.openRuns + (wayId to run.copy(isCounted = true)),
         )
 
         // 0回の道には段階が無い（WayGrowth のKDoc）ので、初回は必ず「上がった」になる。
@@ -161,6 +168,19 @@ data class LiveGrowthEstimator(
 
     private fun LocationSample.toGeoPoint(): GeoPoint =
         GeoPoint(latitude = latitude, longitude = longitude)
+
+    /**
+     * 1本の道の「いま開いている通過」。
+     *
+     * @param lastSeenMs その道に最後にスナップした時刻（通過の切れ目の判定材料）。
+     * @param samples その通過でスナップした件数（[MapMatchingConfig.minRunSamples] と比べる）。
+     * @param isCounted その通過をすでに1回として数えたか（1通過1回だけ数える）。
+     */
+    data class OpenRun(
+        val lastSeenMs: Long,
+        val samples: Int,
+        val isCounted: Boolean,
+    )
 
     /** サンプル1件ぶんの結果。 */
     data class Update(

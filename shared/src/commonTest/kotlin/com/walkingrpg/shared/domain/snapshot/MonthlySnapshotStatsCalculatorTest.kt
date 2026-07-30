@@ -4,11 +4,10 @@ import com.walkingrpg.shared.domain.codex.CodexCategory
 import com.walkingrpg.shared.domain.codex.CodexProgress
 import com.walkingrpg.shared.domain.codex.ForeshadowStage
 import com.walkingrpg.shared.domain.codex.Species
-import com.walkingrpg.shared.domain.matching.Passage
 import com.walkingrpg.shared.domain.matching.SessionVisit
-import com.walkingrpg.shared.domain.osm.Way
-import com.walkingrpg.shared.domain.review.WalkReviewCalculator
-import com.walkingrpg.shared.domain.testWay
+import com.walkingrpg.shared.domain.matching.SyntheticWalk
+import com.walkingrpg.shared.domain.review.WalkDistanceCalculator
+import com.walkingrpg.shared.domain.walk.LocationSample
 import com.walkingrpg.shared.domain.walk.SessionEndReason
 import com.walkingrpg.shared.domain.walk.WalkSession
 import kotlin.test.Test
@@ -21,7 +20,7 @@ import kotlin.test.assertEquals
  * - 月の境界（`[月初, 翌月初)`）で切れること
  * - セッションの帰属が **`started_at`** であること（月をまたいだ散歩は出た月）
  * - 「新しい道」＝**初回通過が当月**の道であること
- * - 距離が振り返り（`WalkReviewCalculator`）の足し算と一致すること
+ * - 距離が振り返り（`WalkDistanceCalculator`）の足し算と一致すること
  */
 class MonthlySnapshotStatsCalculatorTest {
 
@@ -53,19 +52,24 @@ class MonthlySnapshotStatsCalculatorTest {
 
     private fun stats(
         sessions: List<WalkSession> = emptyList(),
-        passagesBySession: Map<Long, List<Passage>> = emptyMap(),
-        ways: List<Way> = emptyList(),
+        samplesBySession: Map<Long, List<LocationSample>> = emptyMap(),
         sessionVisitsByWay: Map<Long, List<SessionVisit>> = emptyMap(),
         codexProgresses: List<CodexProgress> = emptyList(),
     ) = MonthlySnapshotStatsCalculator.stats(
         range = june,
         sessions = sessions,
-        passagesBySession = passagesBySession,
-        ways = ways,
+        samplesBySession = samplesBySession,
         sessionVisitsByWay = sessionVisitsByWay,
         codexProgresses = codexProgresses,
         catalog = catalog,
     )
+
+    /** [meters] メートルを東へ歩いた軌跡（10m刻み＝アンカー閾値5mをはっきり超える）。 */
+    private fun walk(sessionId: Long, meters: Double): List<LocationSample> = SyntheticWalk.samples(
+        points = List((meters / 10.0).toInt() + 1) { index ->
+            SyntheticWalk.point(northMeters = 0.0, eastMeters = index * 10.0)
+        },
+    ).map { it.copy(sessionId = sessionId) }
 
     @Test
     fun 散歩が無い月は全部ゼロ() {
@@ -95,32 +99,25 @@ class MonthlySnapshotStatsCalculatorTest {
 
     @Test
     fun 距離は当月のセッションぶんだけを振り返りと同じ物差しで足す() {
-        val ways = listOf(
-            testWay(id = 1L).copy(lengthMeters = 120.0),
-            testWay(id = 2L).copy(lengthMeters = 80.0),
-        )
         val inMonth = session(id = 1L, startedAtMs = 6_100L)
-        val outOfMonth = session(id = 2L, startedAtMs = 5_000L)
-        val passages = mapOf(
-            // 同じ道を2回通っても1本ぶん（WalkReviewCalculator.distanceMeters）
-            1L to listOf(
-                Passage(sessionId = 1L, wayId = 1L, timestampMs = 6_100L),
-                Passage(sessionId = 1L, wayId = 1L, timestampMs = 6_150L),
-                Passage(sessionId = 1L, wayId = 2L, timestampMs = 6_200L),
-            ),
-            2L to listOf(Passage(sessionId = 2L, wayId = 1L, timestampMs = 5_000L)),
+        val alsoInMonth = session(id = 2L, startedAtMs = 6_500L)
+        val outOfMonth = session(id = 3L, startedAtMs = 5_000L)
+        val samples = mapOf(
+            1L to walk(sessionId = 1L, meters = 120.0),
+            2L to walk(sessionId = 2L, meters = 80.0),
+            3L to walk(sessionId = 3L, meters = 500.0),
         )
 
         val result = stats(
-            sessions = listOf(inMonth, outOfMonth),
-            passagesBySession = passages,
-            ways = ways,
+            sessions = listOf(inMonth, alsoInMonth, outOfMonth),
+            samplesBySession = samples,
         )
 
-        assertEquals(200.0, result.distanceMeters, "当月ぶん（120 + 80）だけ")
+        assertEquals(200.0, result.distanceMeters, 1.0, "当月ぶん（120 + 80）だけ")
         // 振り返り側を1回ずつ呼んで足したものと同じ数（月合計と振り返りの足し算が合う）
         assertEquals(
-            WalkReviewCalculator.distanceMeters(passages.getValue(1L), ways),
+            WalkDistanceCalculator.distanceMeters(samples.getValue(1L)) +
+                WalkDistanceCalculator.distanceMeters(samples.getValue(2L)),
             result.distanceMeters,
         )
     }
@@ -214,14 +211,11 @@ class MonthlySnapshotStatsCalculatorTest {
     @Test
     fun 同じ入力からは必ず同じ数値が出る() {
         val sessions = listOf(session(id = 1L, startedAtMs = 6_100L))
-        val passages = mapOf(
-            1L to listOf(Passage(sessionId = 1L, wayId = 1L, timestampMs = 6_100L)),
-        )
-        val ways = listOf(testWay(id = 1L).copy(lengthMeters = 120.0))
+        val samples = mapOf(1L to walk(sessionId = 1L, meters = 120.0))
         val visits = mapOf(1L to listOf(SessionVisit(sessionId = 1L, firstTimestampMs = 6_100L)))
 
-        val first = stats(sessions, passages, ways, visits)
-        val second = stats(sessions, passages, ways, visits)
+        val first = stats(sessions, samples, visits)
+        val second = stats(sessions, samples, visits)
 
         assertEquals(first, second)
     }

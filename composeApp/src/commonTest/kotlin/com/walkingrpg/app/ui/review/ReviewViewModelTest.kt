@@ -18,6 +18,7 @@ import com.walkingrpg.shared.domain.review.GetWalkReviewUseCase
 import com.walkingrpg.shared.domain.review.TimeOfDay
 import com.walkingrpg.shared.domain.review.TimeOfDayResolver
 import com.walkingrpg.shared.domain.review.WalkReview
+import com.walkingrpg.shared.domain.walk.LocationSample
 import com.walkingrpg.shared.domain.walk.SessionEndReason
 import com.walkingrpg.shared.domain.walk.WalkSession
 import com.walkingrpg.shared.domain.weather.ObserveSessionWeatherUseCase
@@ -91,9 +92,25 @@ class ReviewViewModelTest {
             endReason = SessionEndReason.AUTO_ARRIVAL,
         ).takeIf { sessionExists }
 
-        /** 2.3kmの散歩1回ぶん（design.md §3 のウォークスルーの数字）。 */
+        /**
+         * 100mの散歩1回ぶん。
+         *
+         * 距離は軌跡から出る（`WalkDistanceCalculator`）ので、way長ではなく
+         * サンプル列で決まる。真北へ10m刻みで10区間＝100m。
+         */
         val getWalkReview = GetWalkReviewUseCase(
-            walkSessionRepository = SingleSessionRepository(session),
+            walkSessionRepository = SingleSessionRepository(
+                session = session,
+                samples = List(11) { index ->
+                    LocationSample(
+                        sessionId = sessionId,
+                        timestampMs = startedAtMs + index * 2_000L,
+                        latitude = 35.0 + index * 10.0 / 111_194.9,
+                        longitude = 139.0,
+                        accuracyMeters = 5.0,
+                    )
+                },
+            ),
             passageRepository = StubPassageRepository(
                 sessionPassages = mapOf(
                     sessionId to listOf(
@@ -170,7 +187,7 @@ class ReviewViewModelTest {
 
         val state = viewModel.uiState.value
         assertFalse(state.isLoading)
-        assertEquals(2_300.0, state.review?.distanceMeters)
+        assertEquals(100.0, state.review?.distanceMeters ?: 0.0, 0.5)
         assertEquals(durationMs, state.review?.durationMs)
         assertEquals(GrowthStage.TREE, state.review?.grownWays?.single()?.to, "木に上がった")
         val remark = assertNotNull(state.remark)

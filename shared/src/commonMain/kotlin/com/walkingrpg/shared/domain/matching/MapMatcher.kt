@@ -16,11 +16,24 @@ import com.walkingrpg.shared.domain.walk.LocationSample
  * パイプライン（順序に意味がある）：
  * 1. **精度フィルタ**：誤差の大きいサンプルを落とす（[MapMatchingConfig.maxAccuracyMeters]）
  * 2. **速度フィルタ**：歩行ではありえない速度が続く区間＝電車・バスを落とす
- * 3. **最寄りway探索**：残ったサンプルを最寄りのwayへスナップ（上限距離あり）
- * 4. **連続性チェック**：単発の飛びをノイズとして均し、同じwayへの連続を1つの通過に畳む
+ * 3. **スナップ**：残ったサンプルを最寄りのwayへ（上限距離あり）。ただし直前のwayには
+ *    粘着する（[MapMatchingConfig.hysteresisMarginMeters]）
+ * 4. **連続性チェック**：単発の飛びをノイズとして均し（[MapMatchingConfig.minRunSamples]）、
+ *    同じwayへの連続を1つの通過に畳む
  *
  * 精度フィルタを先に置くのは、誤差の大きいサンプルが速度計算を汚さないため
  * （50m飛んだ1件で、その前後2区間が「乗り物」に見えてしまう）。
+ *
+ * ## 境界の振動に効く3つの機構（役割が違うので全部要る）
+ * 実散歩のログでは、並走する2本のfootwayと交差点で通過が水増しされた。効かせる場所が違う：
+ *
+ * - **ヒステリシス**（3のスナップ時）：札そのものを揺らさない。並走2本の**中間**で
+ *   ふらつくケースに効く。1サンプル単位で判断する唯一の機構
+ * - **ノイズ均し**（[smoothNoise]）：短すぎる塊を消す。単発〜数件の飛びに効くが、
+ *   前後が同じwayでなければ「どの道でもない」に落とすだけなので、
+ *   交差点で本当にBの上を通った数秒間は残る
+ * - **再通過の併合**（[toPassages]）：札は正しいまま、**数え方**を直す。
+ *   A→B→A が短時間で起きたときにAを2回にしない
  */
 object MapMatcher {
 
@@ -44,7 +57,7 @@ object MapMatcher {
 
         val accurate = ordered.filter { it.accuracyMeters <= config.maxAccuracyMeters }
         val walking = dropVehicleRuns(accurate, config)
-        val labels = walking.map { sample -> nearestWayId(sample.toGeoPoint(), ways, config) }
+        val labels = label(walking, ways, config)
         val smoothed = smoothNoise(labels, config.minRunSamples)
 
         return toPassages(sessionId, walking, smoothed, config)
@@ -99,18 +112,70 @@ object MapMatcher {
         return samples.filterIndexed { position, _ -> !excluded[position] }
     }
 
+    /** サンプル列を1件ずつ道に貼る。直前の札を持ち回るので**順に**処理する。 */
+    private fun label(
+        samples: List<LocationSample>,
+        ways: List<Way>,
+        config: MapMatchingConfig,
+    ): List<Long?> {
+        val labels = ArrayList<Long?>(samples.size)
+        var previousWayId: Long? = null
+        for (sample in samples) {
+            val wayId = snapWayId(sample.toGeoPoint(), ways, config, previousWayId)
+            labels += wayId
+            // どの道でもないサンプルでは粘着先を捨てない（木の下で1点外しただけで
+            // 並走する道に乗り換えてしまわないように）。
+            if (wayId != null) previousWayId = wayId
+        }
+        return labels
+    }
+
     /**
-     * 最寄りway探索。[MapMatchingConfig.maxSnapDistanceMeters] を超えたら `null`（どの道でもない）。
+     * サンプルを道に貼る。[MapMatchingConfig.maxSnapDistanceMeters] を超えたら
+     * `null`（どの道でもない）。
      *
-     * 同点のときはway IDの小さい方を採る。実際に同点になることはまず無いが、
+     * ## ヒステリシス（現在の道への粘着）
+     * 直前に乗っていた [previousWayId] もスナップ距離内にいるなら、新しいwayが
+     * [MapMatchingConfig.hysteresisMarginMeters] 以上**明確に近い**ときだけ乗り換える。
+     * 並走する2本の中間でGPSがふらつくと、素の最寄り判定では数秒ごとに札が入れ替わり、
+     * 片方しか歩いていないのに両方が通過になる（実散歩で観測）。
+     *
+     * 「いま乗っている道を歩き続けている」方が「1サンプルおきに隣の道へ乗り換える」より
+     * 圧倒的にありそう、という事前確率をそのまま閾値にしたもの。
+     *
+     * ## 同点の扱い
+     * 最寄りが同点のときはway IDの小さい方を採る。実際に同点になることはまず無いが、
      * 順序に依存しない規則を決めておかないと冪等性が崩れる。
      *
      * `internal` で開けてあるのは、歩行中の見込み判定
      * （[com.walkingrpg.shared.domain.feedback.LiveGrowthEstimator]）が**同じ規則**で
      * スナップするため。ここを写して持たせると、閾値を変えたときに
      * 歩行中と帰宅後で乗る道が食い違う。
+     *
+     * @param previousWayId 直前に乗っていた道。`null`（散歩の頭）なら素の最寄り。
      */
-    internal fun nearestWayId(point: GeoPoint, ways: List<Way>, config: MapMatchingConfig): Long? {
+    internal fun snapWayId(
+        point: GeoPoint,
+        ways: List<Way>,
+        config: MapMatchingConfig,
+        previousWayId: Long? = null,
+    ): Long? {
+        val nearest = nearestSnap(point, ways, config) ?: return null
+        if (previousWayId == null || nearest.wayId == previousWayId) return nearest.wayId
+
+        // 直前の道がマスタから消えた（対象圏を取り直した）場合は粘着しようがない
+        val previousGeometry = ways.firstOrNull { it.id == previousWayId }?.geometry
+            ?: return nearest.wayId
+        val previousDistance = GeoDistance.distanceToPathMeters(point, previousGeometry)
+        // 直前の道からもう離れてしまったなら、粘着させる理由が無い（普通に曲がった）
+        if (previousDistance > config.maxSnapDistanceMeters) return nearest.wayId
+
+        val isClearlyCloser = nearest.distanceMeters < previousDistance - config.hysteresisMarginMeters
+        return if (isClearlyCloser) nearest.wayId else previousWayId
+    }
+
+    /** 最寄りwayとその距離。圏内に1本も無ければ `null`。 */
+    private fun nearestSnap(point: GeoPoint, ways: List<Way>, config: MapMatchingConfig): Snap? {
         var bestId: Long? = null
         var bestDistance = config.maxSnapDistanceMeters
         for (way in ways) {
@@ -122,8 +187,10 @@ object MapMatcher {
                 bestDistance = distance
             }
         }
-        return bestId
+        return bestId?.let { Snap(wayId = it, distanceMeters = bestDistance) }
     }
+
+    private data class Snap(val wayId: Long, val distanceMeters: Double)
 
     /**
      * 連続性チェック。同じway IDが続く塊（run）を単位に、短すぎる塊を均す。
@@ -135,6 +202,10 @@ object MapMatcher {
      *
      * 判定材料は必ず**元の**塊の並びを見る。均した結果を次の判定に使うと、
      * 端から順に効果が伝播して入力の並び方に依存しはじめる。
+     *
+     * ヒステリシス（[snapWayId]）を入れたあとも残す：あちらは**乗り換えの判断**を
+     * 渋らせるだけで、粘着を突破した飛び（本当に隣の道の方がはっきり近い1点）は
+     * そのまま札になる。それを消すのはこちらの仕事。
      */
     private fun smoothNoise(labels: List<Long?>, minRunSamples: Int): List<Long?> {
         if (labels.isEmpty()) return labels
@@ -156,11 +227,11 @@ object MapMatcher {
     }
 
     /**
-     * 同じwayへの連続スナップを1つの通過に畳む。
+     * 貼った札を通過に畳む。切れ目の規則そのものは [PassageBoundary]（歩行中の見込みと共有）。
      *
-     * - wayが変われば別の通過
-     * - 同じwayでも [MapMatchingConfig.maxPassageGapMs] 以上間が空いたら別の通過
-     *   （途中で測位が落ちた・遠回りして戻ってきた）
+     * 道ごとに「最後にスナップした時刻」を持ち回るのは、**別の道を挟んで戻ってきた**
+     * ケースを見分けるため。交差点で横断する道に数秒だけ乗ってすぐ戻る形
+     * （[MapMatchingConfig.revisitMergeGapMs] 未満）は1回の通過に併合する。
      *
      * 「どの道でもない」サンプルは通過を切らない。切ってしまうと、木の下で
      * スナップを1点外しただけで1本の道が2回通ったことになる（水増し）。
@@ -172,19 +243,24 @@ object MapMatcher {
         config: MapMatchingConfig,
     ): List<Passage> {
         val passages = mutableListOf<Passage>()
+        val lastSeenByWay = mutableMapOf<Long, Long>()
         var currentWayId: Long? = null
-        var lastTimestampMs = 0L
 
         labels.forEachIndexed { index, wayId ->
             if (wayId == null) return@forEachIndexed
             val timestampMs = samples[index].timestampMs
-            val isNewPassage = wayId != currentWayId ||
-                timestampMs - lastTimestampMs > config.maxPassageGapMs
+            val isNewPassage = PassageBoundary.isNewPassage(
+                wayId = wayId,
+                timestampMs = timestampMs,
+                currentWayId = currentWayId,
+                lastSeenOnWayMs = lastSeenByWay[wayId],
+                config = config,
+            )
             if (isNewPassage) {
                 passages += Passage(sessionId = sessionId, wayId = wayId, timestampMs = timestampMs)
             }
+            lastSeenByWay[wayId] = timestampMs
             currentWayId = wayId
-            lastTimestampMs = timestampMs
         }
         return passages
     }

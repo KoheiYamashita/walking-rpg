@@ -93,6 +93,7 @@ import com.walkingrpg.shared.domain.review.PendingReviewRepository
 import com.walkingrpg.shared.domain.review.RequestPendingReviewUseCase
 import com.walkingrpg.shared.domain.review.RequestReviewForFinishedWalkUseCase
 import com.walkingrpg.shared.domain.review.TimeOfDayResolver
+import com.walkingrpg.shared.domain.review.WalkDistanceConfig
 import com.walkingrpg.shared.domain.snapshot.GenerateMonthlySnapshotsUseCase
 import com.walkingrpg.shared.domain.snapshot.GetMonthlySnapshotSceneUseCase
 import com.walkingrpg.shared.domain.snapshot.GetMonthlySnapshotStatsUseCase
@@ -427,6 +428,9 @@ val sharedModule = module {
     // 数値サマリは確定データからの再計算で組む（通信しない）。閾値は成長・図鑑と同じ1個を使う
     // ＝振り返りと地図・図鑑で数え方がずれない。種カタログは手書きの定数なのでDIに載せない
     // （GetCodexUseCase と同じ理由：factoryOf にすると List<Species> の定義を探して落ちる）。
+    // 距離の閾値（WalkDistanceConfig）は振り返りと月次スナップショットで同じ1個を使う
+    // ＝月の合計が振り返りの足し算と食い違わない。
+    single { WalkDistanceConfig.DEFAULT }
     factory {
         GetWalkReviewUseCase(
             walkSessionRepository = get(),
@@ -436,6 +440,7 @@ val sharedModule = module {
             getCodex = get(),
             growthConfig = get(),
             codexConfig = get(),
+            walkDistanceConfig = get(),
         )
     }
     // 時間帯（パートナーの一言の材料）はタイムゾーンの知識が要るのでデータ層に置く。
@@ -464,9 +469,9 @@ val sharedModule = module {
         GetMonthlySnapshotStatsUseCase(
             walkSessionRepository = get(),
             passageRepository = get(),
-            osmMasterRepository = get(),
             codexProgressRepository = get(),
             calendarDays = get(),
+            walkDistanceConfig = get(),
         )
     }
     factoryOf(::GenerateMonthlySnapshotsUseCase)

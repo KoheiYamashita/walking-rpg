@@ -2,10 +2,10 @@ package com.walkingrpg.shared.domain.snapshot
 
 import com.walkingrpg.shared.domain.codex.CodexProgress
 import com.walkingrpg.shared.domain.codex.Species
-import com.walkingrpg.shared.domain.matching.Passage
 import com.walkingrpg.shared.domain.matching.SessionVisit
-import com.walkingrpg.shared.domain.osm.Way
-import com.walkingrpg.shared.domain.review.WalkReviewCalculator
+import com.walkingrpg.shared.domain.review.WalkDistanceCalculator
+import com.walkingrpg.shared.domain.review.WalkDistanceConfig
+import com.walkingrpg.shared.domain.walk.LocationSample
 import com.walkingrpg.shared.domain.walk.WalkSession
 
 /**
@@ -16,9 +16,10 @@ import com.walkingrpg.shared.domain.walk.WalkSession
  * ＝月をまたいだ直後に作った1枚と、あとから穴埋めで作った1枚の数値が食い違わない。
  *
  * ## 物差しは既存のものを使い回す
- * 距離は振り返り（design.md §4.5）と同じ [WalkReviewCalculator.distanceMeters] を
- * セッションごとに呼んで足す。月の合計を別の式（測位サンプル間の積み上げ等）で出すと、
- * 振り返りを12回足した数と年の合計が合わなくなる。
+ * 距離は振り返り（design.md §4.5）と同じ [WalkDistanceCalculator.distanceMeters] を
+ * セッションごとに呼んで足す。月の合計を別の式で出すと、振り返りを30回足した数と
+ * 月の合計が合わなくなる。**セッションを跨いだ距離は作らない**（散歩と散歩のあいだの
+ * 移動は歩いた距離ではない）ので、足すのは1回ぶんずつ。
  *
  * ## セッションの月の帰属は `started_at`
  * 月末23:50に出て翌月0:10に帰った散歩は**出た月**に入る。「その散歩をどの月の記憶として
@@ -31,28 +32,29 @@ object MonthlySnapshotStatsCalculator {
     /**
      * @param range その月の epoch millis 範囲（`CalendarDays.monthRange`）。
      * @param sessions 全セッション（この関数が [range] で絞る）。
-     * @param passagesBySession セッション → そのセッションの通過。当月のセッションぶんだけあればよい。
-     * @param ways way マスタ（距離を引くのに使う）。
+     * @param samplesBySession セッション → そのセッションの測位サンプル。
+     *  当月のセッションぶんだけあればよい。
      * @param sessionVisitsByWay 道 → その道を通った散歩（`PassageRepository.sessionVisitsByWay`）。
      * @param codexProgresses 図鑑の進捗（`codex_progress`）。発見時刻が当月のものを数える。
      * @param catalog 種カタログ。発見した種名の**並びはこの順**。
+     * @param walkDistanceConfig 距離の閾値。振り返りと同じ1個を渡す。
      */
     fun stats(
         range: MonthRange,
         sessions: List<WalkSession>,
-        passagesBySession: Map<Long, List<Passage>>,
-        ways: List<Way>,
+        samplesBySession: Map<Long, List<LocationSample>>,
         sessionVisitsByWay: Map<Long, List<SessionVisit>>,
         codexProgresses: List<CodexProgress>,
         catalog: List<Species>,
+        walkDistanceConfig: WalkDistanceConfig = WalkDistanceConfig.DEFAULT,
     ): MonthlySnapshotStats {
         val monthSessions = sessions.filter { it.startedAtMs in range }
 
         return MonthlySnapshotStats(
             distanceMeters = monthSessions.sumOf { session ->
-                WalkReviewCalculator.distanceMeters(
-                    sessionPassages = passagesBySession[session.id].orEmpty(),
-                    ways = ways,
+                WalkDistanceCalculator.distanceMeters(
+                    samples = samplesBySession[session.id].orEmpty(),
+                    config = walkDistanceConfig,
                 )
             },
             newWayCount = newWayCount(range, sessionVisitsByWay),

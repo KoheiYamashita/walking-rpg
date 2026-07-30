@@ -8,7 +8,12 @@ import kotlin.math.round
 
 /** 振り返りの表示用の整形。UI都合の変換なのでUI層に置く（`HomeFormatting` と同じ扱い）。 */
 
-/** 「2.3km」。散歩の距離に10m単位の情報量は無いので小数第1位まで。 */
+/**
+ * 「1.5km」。散歩の距離に10m単位の情報量は無いので小数第1位まで。
+ *
+ * 中身は**実際に歩いた距離**（`WalkDistanceCalculator`）＝軌跡の長さ。
+ * 「通った道の長さの合計」ではないので、地図で塗られた範囲より小さく出るのが正しい。
+ */
 internal fun formatDistanceKm(meters: Double): String {
     val scaled = round(meters / 100.0).toLong()
     return "${scaled / 10}.${scaled % 10}km"

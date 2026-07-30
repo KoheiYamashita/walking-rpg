@@ -1,6 +1,8 @@
 package com.walkingrpg.shared.domain.feedback
 
 import com.walkingrpg.shared.domain.growth.GrowthStage
+import com.walkingrpg.shared.domain.matching.MapMatcher
+import com.walkingrpg.shared.domain.matching.SyntheticWalk
 import com.walkingrpg.shared.domain.testWay
 import com.walkingrpg.shared.domain.walk.LocationSample
 import kotlin.test.Test
@@ -126,6 +128,41 @@ class LiveGrowthEstimatorTest {
         // 2回ぶん数えていることは、閾値の手前から始めれば分かる
         val fromGrass = estimator(passCounts = mapOf(WAY_ID to 1)).eventsFrom(samples)
         assertEquals(GrowthStage.FLOWER, (fromGrass.single() as WalkEvent.GrowthStageUp).stage)
+    }
+
+    @Test
+    fun 交差点で横断する道を挟んでも見込みは確定と同じ回数になる() {
+        // MapMatcherTest「交差点で横断する道を数秒挟んでも元の道は1通過」と同じ形。
+        // 見込みが確定より多く鳴ると、振り返りで「育っていない」と食い違う。
+        val mainStreet = SyntheticWalk.eastWestWay(id = 1L, northMeters = 0.0, fromEast = 0.0, toEast = 300.0)
+        val crossing = SyntheticWalk.northSouthWay(
+            id = 6L,
+            eastMeters = 150.0,
+            fromNorth = -100.0,
+            toNorth = 100.0,
+        )
+        val points = List(18) { SyntheticWalk.point(0.0, 100.0 + it * 2.8) } +
+            List(3) { SyntheticWalk.point(8.0, 148.0 + it * 2.0) } +
+            List(18) { SyntheticWalk.point(0.0, 154.0 + it * 2.8) }
+        val walk = SyntheticWalk.samples(points).map { it.copy(sessionId = SESSION_ID) }
+        val ways = listOf(mainStreet, crossing)
+
+        var estimator = LiveGrowthEstimator(sessionId = SESSION_ID, ways = ways, passCounts = emptyMap())
+        val events = mutableListOf<WalkEvent.GrowthStageUp>()
+        walk.forEach { sample ->
+            val update = estimator.sampleRecorded(sample)
+            estimator = update.estimator
+            update.event?.let { events += it }
+        }
+
+        val confirmed = MapMatcher.match(SESSION_ID, walk, ways).groupingBy { it.wayId }.eachCount()
+        assertEquals(mapOf(1L to 1, 6L to 1), confirmed, "確定：本通り1回・横断した道1回")
+        assertEquals(
+            confirmed.keys,
+            events.map { it.wayId }.toSet(),
+            "見込みも同じ道を同じ回数だけ（本通りは戻ってきても数え直さない）",
+        )
+        assertEquals(2, events.size)
     }
 
     private companion object {

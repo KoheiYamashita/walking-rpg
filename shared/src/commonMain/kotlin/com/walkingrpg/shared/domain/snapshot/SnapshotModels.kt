@@ -59,8 +59,8 @@ data class MonthRange(val fromMs: Long, val untilMs: Long) {
  * 数値は「その月に何が起きたか」の記録そのもので、あとから passage を消しても
  * 遡って作り直せてはいけない。だから語りではなく数値を焼き込む。
  *
- * @param distanceMeters その月の散歩の距離の合計。1回ぶんの物差しは振り返りと同じ
- *  （`WalkReviewCalculator.distanceMeters`）＝月の合計は振り返りの足し算と必ず一致する。
+ * @param distanceMeters その月に**実際に歩いた距離**の合計。1回ぶんの物差しは振り返りと同じ
+ *  （`WalkDistanceCalculator.distanceMeters`）＝月の合計は振り返りの足し算と必ず一致する。
  * @param newWayCount その月に**はじめて通った**道の本数（初回通過が当月に入る道）。
  * @param discoveredSpeciesNames その月に発見した種の名前（`SpeciesCatalog` の並び）。
  * @param sessionCount その月に始めた散歩の回数（月の帰属は `started_at` 基準）。

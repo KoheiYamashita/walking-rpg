@@ -4,7 +4,7 @@ import com.walkingrpg.shared.domain.codex.CodexProgressRepository
 import com.walkingrpg.shared.domain.codex.Species
 import com.walkingrpg.shared.domain.codex.SpeciesCatalog
 import com.walkingrpg.shared.domain.matching.PassageRepository
-import com.walkingrpg.shared.domain.osm.OsmMasterRepository
+import com.walkingrpg.shared.domain.review.WalkDistanceConfig
 import com.walkingrpg.shared.domain.steps.CalendarDays
 import com.walkingrpg.shared.domain.walk.WalkSessionRepository
 
@@ -20,9 +20,9 @@ import com.walkingrpg.shared.domain.walk.WalkSessionRepository
 class GetMonthlySnapshotStatsUseCase(
     private val walkSessionRepository: WalkSessionRepository,
     private val passageRepository: PassageRepository,
-    private val osmMasterRepository: OsmMasterRepository,
     private val codexProgressRepository: CodexProgressRepository,
     private val calendarDays: CalendarDays,
+    private val walkDistanceConfig: WalkDistanceConfig = WalkDistanceConfig.DEFAULT,
     /** 対象の種。差し替えられるのはテストのためで、本番は手書きのカタログ全部。 */
     private val catalog: List<Species> = SpeciesCatalog.ALL,
 ) {
@@ -34,11 +34,14 @@ class GetMonthlySnapshotStatsUseCase(
         return MonthlySnapshotStatsCalculator.stats(
             range = range,
             sessions = sessions,
-            passagesBySession = sessions.associate { it.id to passageRepository.passages(it.id) },
-            ways = osmMasterRepository.ways(),
+            // 距離は軌跡から出す（WalkDistanceCalculator）ので、月ぶんの生サンプルを読む。
+            // 1回1000件強 × 月20〜30回＝数万件で、月次スナップショットは
+            // 起動時に高々数回しか走らない（GenerateMonthlySnapshotsUseCase）ので許容する。
+            samplesBySession = sessions.associate { it.id to walkSessionRepository.samples(it.id) },
             sessionVisitsByWay = passageRepository.sessionVisitsByWay(),
             codexProgresses = codexProgressRepository.progresses(),
             catalog = catalog,
+            walkDistanceConfig = walkDistanceConfig,
         )
     }
 }

@@ -104,7 +104,7 @@ iosApp/       # iOSエントリポイント
     データは全部手元にある。色は地図画面と同じ `stageColorHex` を使う
   - `stats_json` はその月の数値（距離・新しい道の本数・発見した種名・散歩の回数）。
     `schemaVersion` を持つ（この列は作り直せないので、項目を足したとき古い行を読めなくしない）。
-    距離の物差しは振り返り（§4.5）と同じ `WalkReviewCalculator.distanceMeters` の月合計
+    距離の物差しは振り返り（§4.5）と同じ `WalkDistanceCalculator.distanceMeters` の月合計
     ＝振り返りの足し算と一致する。セッションの月の帰属は `started_at` 基準
   - **例外：ドメインのポート `MonthlySnapshotRenderer` の実装だけはUI層（composeApp）にある。**
     描画APIが Compose にしかなく、`shared` は Compose に依存していないため。DIの登録も

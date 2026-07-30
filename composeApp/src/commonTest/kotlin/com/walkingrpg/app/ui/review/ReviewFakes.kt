@@ -57,6 +57,8 @@ import kotlinx.datetime.toLocalDateTime
 /** セッション1件だけを持つ [WalkSessionRepository]。 */
 internal class SingleSessionRepository(
     private val session: WalkSession?,
+    /** そのセッションの軌跡。距離は way長の合算ではなくここから出る（`WalkDistanceCalculator`）。 */
+    private val samples: List<LocationSample> = emptyList(),
 ) : WalkSessionRepository {
 
     override suspend fun session(sessionId: Long): WalkSession? =
@@ -69,7 +71,8 @@ internal class SingleSessionRepository(
 
     override suspend fun abandonOpenSessions(): List<Long> = notUsed()
     override fun observeSessions(): Flow<List<WalkSessionSummary>> = emptyFlow()
-    override suspend fun samples(sessionId: Long): List<LocationSample> = emptyList()
+    override suspend fun samples(sessionId: Long): List<LocationSample> =
+        samples.takeIf { session?.id == sessionId }.orEmpty()
     override suspend fun recentFinishedSessions(limit: Int): List<WalkSession> = listOfNotNull(session)
 
     // 押し忘れの判定（issue #16）が引く口。この1件だけを持っているので範囲で絞って返す

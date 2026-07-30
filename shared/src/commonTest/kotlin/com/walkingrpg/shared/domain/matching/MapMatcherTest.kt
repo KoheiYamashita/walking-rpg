@@ -154,7 +154,8 @@ class MapMatcherTest {
         val northOffsets = listOf(0.0, 2.0, -3.0, 1.0, 11.0, -2.0, 3.0, 0.0)
         val points = northOffsets.mapIndexed { index, north -> point(north, 40.0 + index * 2.8) }
 
-        // minRunSamples = 1 ＝ ノイズ除去なし。1件の飛びが通過3本に化ける
+        // minRunSamples = 1 ＝ ノイズ除去なし。1件の飛びで歩いていない裏道が塗られる
+        // （本通りが2回にならないのは再通過の併合が効いているから＝別のテスト）
         val result = MapMatcher.match(
             sessionId = SESSION_ID,
             samples = samples(points),
@@ -162,7 +163,16 @@ class MapMatcherTest {
             config = MapMatchingConfig(minRunSamples = 1),
         )
 
-        assertEquals(listOf(1L, 3L, 1L), result.map { it.wayId })
+        assertEquals(listOf(1L, 3L), result.map { it.wayId })
+
+        // 併合も切れば、飛び1件が本通りを2回に割る（3本に化ける形）
+        val rawest = MapMatcher.match(
+            sessionId = SESSION_ID,
+            samples = samples(points),
+            ways = listOf(mainStreet, backStreet),
+            config = MapMatchingConfig(minRunSamples = 1, revisitMergeGapMs = 0L),
+        )
+        assertEquals(listOf(1L, 3L, 1L), rawest.map { it.wayId })
     }
 
     @Test
@@ -179,6 +189,104 @@ class MapMatcherTest {
         )
 
         assertEquals(listOf(1L, 2L, 1L), result.map { it.wayId })
+    }
+
+    // main street の6m北を並走する歩道（実対象圏のfootway 2本と同じ間隔）。
+    // 中間（北3m）を歩くと、どちらも3mでヒステリシスが無いと札が揺れ続ける。
+    private val sidewalk = eastWestWay(id = 5L, northMeters = 6.0, fromEast = 0.0, toEast = 300.0)
+
+    // main street の途中（東150m）を south から north へ突っ切る道（交差点）
+    private val crossingStreet =
+        northSouthWay(id = 6L, eastMeters = 150.0, fromNorth = -100.0, toNorth = 100.0)
+
+    @Test
+    fun 並走する2本の中間で揺れても通過は片方1回だけ() {
+        // 2本のちょうど中間（北3m）を、±1.5mでふらつきながら歩く。
+        // 最寄りだけで決めると1サンプルおきに札が入れ替わる形。
+        val northOffsets = List(30) { index -> if (index % 2 == 0) 1.5 else 4.5 }
+        val points = northOffsets.mapIndexed { index, north -> point(north, 40.0 + index * 2.8) }
+
+        val result = MapMatcher.match(SESSION_ID, samples(points), listOf(mainStreet, sidewalk))
+
+        assertEquals(
+            listOf(Passage(SESSION_ID, wayId = 1L, timestampMs = START_MS)),
+            result,
+            "先に乗った道に粘着し続ける（両方は塗らない）",
+        )
+
+        // 粘着を切ると、歩いていない並走路も塗られる（実散歩で観測した水増しそのもの）
+        val withoutHysteresis = MapMatcher.match(
+            sessionId = SESSION_ID,
+            samples = samples(points),
+            ways = listOf(mainStreet, sidewalk),
+            config = MapMatchingConfig(hysteresisMarginMeters = 0.0, minRunSamples = 1),
+        )
+        assertEquals(listOf(1L, 5L), withoutHysteresis.map { it.wayId })
+    }
+
+    @Test
+    fun 交差点で横断する道を数秒挟んでも元の道は1通過() {
+        // 本通りを東へ。東150mで交差する道を横切るあいだ、数サンプルだけ北に8mずれて
+        // そちらの方がはっきり近くなる（横断歩道の中心でよくある形）。
+        val before = walkEast(fromEast = 100.0, count = 18) // 東100〜147.6m
+        val crossing = List(3) { index -> point(8.0, 148.0 + index * 2.0) }
+        val after = walkEast(fromEast = 154.0, count = 18)
+        val ways = listOf(mainStreet, crossingStreet)
+
+        val result = MapMatcher.match(SESSION_ID, samples(before + crossing + after), ways)
+
+        assertEquals(
+            1,
+            result.count { it.wayId == 1L },
+            "戻ってきた本通りは同じ通過の続き（60秒未満の再通過は併合）",
+        )
+        assertEquals(1, result.count { it.wayId == 6L }, "横断した道は1回ぶん数える")
+
+        // 併合を切ると本通りが2回に化ける＝抑えているのはこの機構
+        val withoutMerge = MapMatcher.match(
+            sessionId = SESSION_ID,
+            samples = samples(before + crossing + after),
+            ways = ways,
+            config = MapMatchingConfig(revisitMergeGapMs = 0L),
+        )
+        assertEquals(2, withoutMerge.count { it.wayId == 1L })
+    }
+
+    @Test
+    fun 併合の閾値を超えて空けて戻ってくれば別の通過になる() {
+        // 本通り → 交差する道を北へ2分 → 引き返して本通りへ。往復は2回のまま
+        val out = walkEast(fromEast = 100.0, count = 30)
+        val north = walkNorth(fromNorth = 8.0, count = 40, eastMeters = 300.0)
+        val back = north.reversed()
+        val home = out.reversed()
+
+        val result = MapMatcher.match(
+            sessionId = SESSION_ID,
+            samples = samples(out + north + back + home),
+            ways = listOf(mainStreet, crossStreet),
+        )
+
+        assertEquals(listOf(1L, 2L, 1L), result.map { it.wayId }, "往復は2回（設計どおり）")
+        assertTrue(
+            result.last().timestampMs - result.first().timestampMs >= 60_000L,
+            "併合の閾値（60秒）を超えて離れている",
+        )
+    }
+
+    @Test
+    fun 境界の抑制を入れても同じ列からは同じ通過が出る() {
+        val points = List(40) { index ->
+            point(if (index % 2 == 0) 1.5 else 4.5, 40.0 + index * 2.8)
+        } + walkNorth(fromNorth = 8.0, count = 30, eastMeters = 300.0)
+        val walk = samples(points)
+        val ways = listOf(mainStreet, sidewalk, crossStreet, backStreet)
+
+        assertEquals(MapMatcher.match(SESSION_ID, walk, ways), MapMatcher.match(SESSION_ID, walk, ways))
+        assertEquals(
+            MapMatcher.match(SESSION_ID, walk, ways),
+            MapMatcher.match(SESSION_ID, walk.reversed(), ways.reversed()),
+            "入力の並び順にも依らない",
+        )
     }
 
     @Test
