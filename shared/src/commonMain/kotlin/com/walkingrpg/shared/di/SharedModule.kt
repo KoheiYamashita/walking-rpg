@@ -79,6 +79,7 @@ import com.walkingrpg.shared.domain.osm.GetOsmMasterCountsUseCase
 import com.walkingrpg.shared.domain.osm.ImportOsmAreaUseCase
 import com.walkingrpg.shared.domain.osm.OsmAreaSource
 import com.walkingrpg.shared.domain.osm.OsmMasterRepository
+import com.walkingrpg.shared.domain.osm.ReimportOsmAreaUseCase
 import com.walkingrpg.shared.domain.review.ConsumePendingReviewUseCase
 import com.walkingrpg.shared.domain.review.GetWalkReviewUseCase
 import com.walkingrpg.shared.domain.review.ObservePendingReviewUseCase
@@ -232,6 +233,9 @@ val sharedModule = module {
     single<OsmMasterRepository> { OsmMasterRepositoryImpl(get()) }
     factoryOf(::ImportOsmAreaUseCase)
     factoryOf(::GetOsmMasterCountsUseCase)
+    // 設定画面からの再取り込み（issue #20）。取り込み → 図鑑進捗の作り直し、の1操作。
+    // 初回セットアップ（#6）は進捗がまだ無いので ImportOsmAreaUseCase 単体を使う。
+    factoryOf(::ReimportOsmAreaUseCase)
 
     // --- map matching（issue #8） ---
     // 閾値（MapMatchingConfig）はここで差し替えられる。UIからは触らせない。

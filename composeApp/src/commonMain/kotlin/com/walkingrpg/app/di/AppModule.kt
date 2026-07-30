@@ -6,6 +6,7 @@ import com.walkingrpg.app.ui.codex.CodexViewModel
 import com.walkingrpg.app.ui.home.HomeViewModel
 import com.walkingrpg.app.ui.map.MapViewModel
 import com.walkingrpg.app.ui.review.ReviewViewModel
+import com.walkingrpg.app.ui.settings.SettingsViewModel
 import com.walkingrpg.app.ui.setup.SetupViewModel
 import com.walkingrpg.app.ui.snapshot.ComposeMonthlySnapshotRenderer
 import com.walkingrpg.shared.di.sharedModule
@@ -32,6 +33,7 @@ val appModule = module {
     viewModelOf(::CodexViewModel)
     viewModelOf(::ReviewViewModel)
     viewModelOf(::SetupViewModel)
+    viewModelOf(::SettingsViewModel)
 
     // --- 月次スナップショット（issue #17） ---
     // sharedのポートをUI層が実装する唯一の例（MonthlySnapshotRenderer のKDoc）。
