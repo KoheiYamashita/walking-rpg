@@ -14,12 +14,18 @@ import kotlinx.datetime.toLocalDateTime
  * （issue #12 の完了条件「中身は帰宅後まで分からない」）。ここで道の名前や
  * 段階名を出すと、振動の意味が「印」から「通知」に変わってしまう。
  *
- * M1では断片テキストのLLM生成（#14）がまだ無いので定型文1つだけ。
- * 種別が増えたら（#13 図鑑予兆）この `when` に枝が増える＝
- * 網羅漏れはコンパイルエラーで分かる。
+ * 断片テキストのLLM生成（#14）はまだここには来ていないので定型文。
+ * 種別が増えたらこの `when` に枝が増える＝網羅漏れはコンパイルエラーで分かる。
+ *
+ * 図鑑の枝（#13）で気を付けるのは**種名も棚も出さないこと**。
+ * design.md §4.4 は残り回数を数字で見せない代わりに予兆で匂わせる設計なので、
+ * ここで「水辺の何か」まで踏み込むと、歩行中に予兆が予告に変わる。
+ * 出現（[WalkEvent.CodexDiscovered]）も同じ扱い：何が出たかは帰宅後に図鑑で開く。
  */
 internal fun walkEventFragment(event: WalkEvent): String = when (event) {
     is WalkEvent.GrowthStageUp -> "何かが起きた"
+    is WalkEvent.CodexForeshadow -> "何かの気配がした"
+    is WalkEvent.CodexDiscovered -> "何かに出会った気がする"
 }
 
 /** 経過時間を `mm:ss` / `h:mm:ss` にする。 */

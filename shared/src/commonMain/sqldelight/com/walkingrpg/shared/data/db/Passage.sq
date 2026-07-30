@@ -43,6 +43,17 @@ FROM passage
 GROUP BY way_id
 ORDER BY way_id;
 
+-- 導出（codex_progress）の材料。全通過を「道 × 散歩」で畳む。
+-- 図鑑の訪問回数は「同じ川に10回通って」（design.md §4.4）＝**散歩の回数**なので、
+-- 同じ散歩で同じ道を往復しても1回に数える（way_growth の「通過ごと」とは意味が違う）。
+-- MIN(ts) まで返すのは、発見時刻（codex_progress.discovered_at）を端末時計ではなく
+-- 歩行ログから導くため。集計をSQLに置く理由は selectPassCountsByWay と同じ。
+selectSessionVisitsByWay:
+SELECT way_id, session_id, MIN(ts) AS first_ts
+FROM passage
+GROUP BY way_id, session_id
+ORDER BY way_id, first_ts, session_id;
+
 countPassagesBySession:
 SELECT COUNT(*)
 FROM passage

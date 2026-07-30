@@ -48,6 +48,7 @@ import org.koin.compose.viewmodel.koinViewModel
 @Composable
 fun HomeScreen(
     onOpenMap: () -> Unit,
+    onOpenCodex: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: HomeViewModel = koinViewModel(),
 ) {
@@ -63,6 +64,7 @@ fun HomeScreen(
         onImportOsmArea = viewModel::onImportOsmArea,
         onMessageShown = viewModel::onMessageShown,
         onOpenMap = onOpenMap,
+        onOpenCodex = onOpenCodex,
         modifier = modifier,
     )
 }
@@ -77,6 +79,7 @@ fun HomeContent(
     onImportOsmArea: () -> Unit,
     onMessageShown: () -> Unit,
     onOpenMap: () -> Unit,
+    onOpenCodex: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     // 画面ON維持は画面遷移で切れないよう App() で一元管理している（KeepScreenOn）。
@@ -145,6 +148,11 @@ fun HomeContent(
             item {
                 TextButton(onClick = onOpenMap, modifier = Modifier.fillMaxWidth()) {
                     Text("地図を見る")
+                }
+            }
+            item {
+                TextButton(onClick = onOpenCodex, modifier = Modifier.fillMaxWidth()) {
+                    Text("図鑑を見る")
                 }
             }
 

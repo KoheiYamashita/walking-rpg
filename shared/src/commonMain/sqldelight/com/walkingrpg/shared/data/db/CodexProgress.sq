@@ -1,0 +1,52 @@
+-- 図鑑の進捗（architecture.md §4「導出（キャッシュ。いつでも捨てて再計算できる）」）。
+-- passage の集計結果でしかない＝この表は消してよい。消して
+-- RecomputeCodexProgressUseCase を流せば同じ状態が戻る（way_growth と同じ性質）。
+--
+-- 持たせているのは表示のため。図鑑を開くたびに全通過とPOI×wayの空間結合を
+-- やり直さずに済む。値の正しさの根拠は常に passage 側にあるので、
+-- ここの行と食い違ったら passage が正しい。
+--
+-- species_id は手書きの種カタログ（SpeciesCatalog）のIDで、OSMのIDではない。
+-- だから対象圏を取り直しても（poi / way マスタが作り直されても）キーは変わらない。
+-- poi への外部キーは張らない：訪問回数はPOIと道の空間結合を経て出てくる導出値で、
+-- 特定のPOI 1件に紐づく行ではない（棚の中のPOI単位の最大値。CodexProgressCalculator）。
+--
+-- visit_count は「その種の棚に属するPOIのうち、いちばん通ったPOIへ行った散歩の数」。
+-- 「通過ごと」に数える way_growth.pass_count とは意味が違う
+-- （design.md §4.4「同じ川に10回通って」＝10回の散歩）。
+--
+-- discovered_at は端末時計ではなく passage.ts から導く（閾値に到達した散歩の時刻）。
+-- 再計算のたびに発見日が今日にずれると、振り返り（design.md §4.5）が嘘になる。
+
+CREATE TABLE codex_progress (
+    species_id       TEXT NOT NULL PRIMARY KEY, -- SpeciesCatalog の Species.id（1種に1行）
+    visit_count      INTEGER NOT NULL,          -- 棚への訪問回数（1以上。0回の種は行を作らない）
+    foreshadow_stage INTEGER NOT NULL,          -- ForeshadowStage.level（0＝なし / 1＝もう近い）
+    discovered_at    INTEGER                    -- epoch millis。未発見なら NULL
+);
+
+-- 発見済みだけをまとめて引く（図鑑の件数表示・振り返り）。
+CREATE INDEX codex_progress_discovered ON codex_progress(discovered_at);
+
+-- 再計算は deleteAllCodexProgress → insertCodexProgress を1トランザクションで回す（全件の作り直し）。
+-- 差分更新にすると、訪問が消えた種（対象圏を狭めた・セッション削除）の行が取り残されて、
+-- 通っていない場所の生き物が図鑑に残る。
+deleteAllCodexProgress:
+DELETE FROM codex_progress;
+
+insertCodexProgress:
+INSERT INTO codex_progress(species_id, visit_count, foreshadow_stage, discovered_at)
+VALUES (?, ?, ?, ?);
+
+selectAllCodexProgress:
+SELECT species_id, visit_count, foreshadow_stage, discovered_at
+FROM codex_progress
+ORDER BY species_id;
+
+selectCodexProgress:
+SELECT species_id, visit_count, foreshadow_stage, discovered_at
+FROM codex_progress
+WHERE species_id = ?;
+
+countCodexProgress:
+SELECT COUNT(*) FROM codex_progress;

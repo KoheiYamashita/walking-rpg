@@ -3,6 +3,7 @@ package com.walkingrpg.shared.data.matching
 import com.walkingrpg.shared.data.db.WalkingRpgDatabase
 import com.walkingrpg.shared.domain.matching.Passage
 import com.walkingrpg.shared.domain.matching.PassageRepository
+import com.walkingrpg.shared.domain.matching.SessionVisit
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -53,4 +54,20 @@ internal class PassageRepositoryImpl(
         passages.selectPassCountsByWay().executeAsList()
             .associate { row -> row.way_id to row.pass_count.toInt() }
     }
+
+    // MIN(ts) は集約なのでSQLDelightの型は Long?（行が無ければNULL）になるが、
+    // GROUP BY の結果に空グループは現れないので実際にはnullにならない。
+    // 万一nullで来た行は落とす（時刻の分からない訪問は発見時刻を決められない）。
+    override suspend fun sessionVisitsByWay(): Map<Long, List<SessionVisit>> =
+        withContext(dispatcher) {
+            passages.selectSessionVisitsByWay().executeAsList()
+                .mapNotNull { row ->
+                    val firstTs = row.first_ts ?: return@mapNotNull null
+                    row.way_id to SessionVisit(
+                        sessionId = row.session_id,
+                        firstTimestampMs = firstTs,
+                    )
+                }
+                .groupBy(keySelector = { it.first }, valueTransform = { it.second })
+        }
 }

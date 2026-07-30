@@ -9,6 +9,7 @@ import com.walkingrpg.shared.domain.feedback.WalkFeedbackConfig
 import com.walkingrpg.shared.domain.map.GeoPoint
 import com.walkingrpg.shared.domain.matching.Passage
 import com.walkingrpg.shared.domain.matching.PassageRepository
+import com.walkingrpg.shared.domain.matching.SessionVisit
 import com.walkingrpg.shared.domain.osm.Way
 import com.walkingrpg.shared.domain.testWay
 import com.walkingrpg.shared.domain.walk.LocationSample
@@ -202,6 +203,8 @@ class WalkFeedbackImplTest {
         override suspend fun replaceSessionPassages(sessionId: Long, passages: List<Passage>) = Unit
         override suspend fun passages(sessionId: Long): List<Passage> = emptyList()
         override suspend fun passCountsByWay(): Map<Long, Int> = error("DBが読めません")
+        override suspend fun sessionVisitsByWay(): Map<Long, List<SessionVisit>> =
+            error("DBが読めません")
     }
 
     private companion object {

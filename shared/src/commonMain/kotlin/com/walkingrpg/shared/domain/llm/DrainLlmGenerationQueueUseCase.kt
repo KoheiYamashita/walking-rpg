@@ -32,12 +32,17 @@ import kotlinx.coroutines.sync.withLock
  * DI（`sharedModule`）では `single` で登録してある。
  *
  * ## キューの並び
- * 今は地点フレーバー1本だけ。#15（図鑑の記述文）・#16（振り返り文）が増えるときは
+ * 地点フレーバー（#14）と図鑑の記述文（#13）の2本。#16（振り返り文）が増えるときも
  * **コンストラクタに引数を足す**：`List<LlmGenerationQueue>` で受けると、
  * 登録漏れが実行時（何も生成されない）にしか分からない。引数で受ければ
  * DIの検証（`SharedModuleVerifyTest`）とコンパイラが漏れを見つける。
+ *
+ * 並びは「件数の多い順」ではなく**外れても困らない順**にしてある：
+ * 記述文は種が有限（十数件）で、発見した瞬間に文章が無いのがいちばん痛い（design.md §4.4）ので
+ * 先に埋める。地点フレーバーは数百件あるが、未生成の地点は定型文でそのまま成立する。
  */
 class DrainLlmGenerationQueueUseCase(
+    private val speciesDescriptionQueue: LlmGenerationQueue,
     private val poiFlavorQueue: LlmGenerationQueue,
 ) {
     /** 実行を直列化する（上記「実行は直列」）。 */
@@ -61,7 +66,8 @@ class DrainLlmGenerationQueueUseCase(
         return Result(outcomes.toList())
     }
 
-    private val queues: List<LlmGenerationQueue> get() = listOf(poiFlavorQueue)
+    private val queues: List<LlmGenerationQueue>
+        get() = listOf(speciesDescriptionQueue, poiFlavorQueue)
 
     /** ドレイン1回の結果（キューごと）。 */
     data class Result(

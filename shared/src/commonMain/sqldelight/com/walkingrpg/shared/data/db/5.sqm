@@ -1,0 +1,22 @@
+-- v5 → v6：図鑑の進捗 codex_progress を足す（issue #13）。
+--
+-- v5 の端末は 1.sqm〜4.sqm を流し終えた状態なので、ここでも中身はバージョンで確定する。
+-- 1.sqm のような IF NOT EXISTS は書かない（あれはスパイク期の後始末。
+-- 付けると「作られなかった」事故が黙って通る）。
+--
+-- 導出キャッシュなので値の移し替えは要らない。既存の端末では行が0件＝全種が未発見として
+-- 見えるが、更新後の最初の再計算（RecomputeCodexProgressUseCase）が過去の passage 全件から
+-- 引き直すので、それまで歩いたぶんの図鑑はそのまま復活する（発見時刻まで含めて。
+-- discovered_at は端末時計ではなく passage.ts から導くため）。
+--
+-- 中身は CodexProgress.sq の CREATE 文と1文字単位で揃えること。ズレると
+-- verifyMigrations（shared/build.gradle.kts）がビルドで落とす。
+
+CREATE TABLE codex_progress (
+    species_id       TEXT NOT NULL PRIMARY KEY, -- SpeciesCatalog の Species.id（1種に1行）
+    visit_count      INTEGER NOT NULL,          -- 棚への訪問回数（1以上。0回の種は行を作らない）
+    foreshadow_stage INTEGER NOT NULL,          -- ForeshadowStage.level（0＝なし / 1＝もう近い）
+    discovered_at    INTEGER                    -- epoch millis。未発見なら NULL
+);
+
+CREATE INDEX codex_progress_discovered ON codex_progress(discovered_at);

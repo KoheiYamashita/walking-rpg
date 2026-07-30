@@ -1,10 +1,13 @@
 package com.walkingrpg.shared.domain.growth
 
 import com.walkingrpg.shared.data.FakeWalkSessionRepository
+import com.walkingrpg.shared.domain.FakeCodexProgressRepository
 import com.walkingrpg.shared.domain.FakeOsmMasterRepository
 import com.walkingrpg.shared.domain.FakePassageRepository
+import com.walkingrpg.shared.domain.FakeRecentCodexRepository
 import com.walkingrpg.shared.domain.FakeRecentGrowthRepository
 import com.walkingrpg.shared.domain.FakeWayGrowthRepository
+import com.walkingrpg.shared.domain.codex.RecomputeCodexProgressUseCase
 import com.walkingrpg.shared.domain.matching.RecomputePassagesUseCase
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
@@ -22,19 +25,31 @@ class RecomputeAfterWalkUseCaseTest {
     private val passages = FakePassageRepository()
     private val growths = FakeWayGrowthRepository()
     private val recentGrowth = FakeRecentGrowthRepository()
+    private val master = FakeOsmMasterRepository()
+    private val codex = FakeCodexProgressRepository()
+    private val recentCodex = FakeRecentCodexRepository()
 
     private val useCase = RecomputeAfterWalkUseCase(
         recomputePassages = RecomputePassagesUseCase(
             sessionRepository = FakeWalkSessionRepository(),
-            osmMasterRepository = FakeOsmMasterRepository(),
+            osmMasterRepository = master,
             passageRepository = passages,
         ),
         recomputeWayGrowth = RecomputeWayGrowthUseCase(
             passageRepository = passages,
             wayGrowthRepository = growths,
         ),
+        // 図鑑側の中身は CodexProgressCalculatorTest が見る。ここでは
+        // 「passage のあとに1回だけ走って、前後差分が RecentCodexRepository に届くか」だけ。
+        recomputeCodexProgress = RecomputeCodexProgressUseCase(
+            passageRepository = passages,
+            osmMasterRepository = master,
+            codexProgressRepository = codex,
+        ),
         wayGrowthRepository = growths,
+        codexProgressRepository = codex,
         recentGrowthRepository = recentGrowth,
+        recentCodexRepository = recentCodex,
     )
 
     @Test
@@ -84,5 +99,17 @@ class RecomputeAfterWalkUseCaseTest {
         // 対象セッションの passage を作り直したうえで、成長は全件を1回だけ入れ替える
         assertEquals(listOf(7L), passages.replacedSessions)
         assertEquals(1, growths.replaceCount)
+        assertEquals(1, codex.replaceCount, "図鑑も全件を1回だけ入れ替える")
+    }
+
+    @Test
+    fun 発見が無い散歩でも図鑑の強調は記録される() = runTest {
+        // POIが無いので図鑑は空のまま。それでも0件を記録して前回の強調を消す
+        passages.passCounts = mapOf(1L to 1)
+
+        val result = useCase(sessionId = 1L)
+
+        assertEquals(emptySet(), result.discoveredSpeciesIds)
+        assertEquals(listOf(emptySet()), recentCodex.recorded)
     }
 }
