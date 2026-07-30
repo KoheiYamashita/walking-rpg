@@ -149,7 +149,7 @@ private fun NumbersCard(review: WalkReview) {
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            SummaryRow("今日の道", formatDistanceKm(review.distanceMeters))
+            SummaryRow("歩いた距離", formatDistanceKm(review.distanceMeters))
             SummaryRow("歩いた時間", formatWalkDuration(review.durationMs))
             formatWeather(review.weather)?.let { SummaryRow("天候", it) }
         }

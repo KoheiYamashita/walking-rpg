@@ -63,9 +63,39 @@ data class MapMatchingConfig(
      *
      * 60秒：立ち止まり・信号待ちで通過が割れない程度に長く、
      * 「一周して同じ道に戻ってきた」を1回に潰さない程度に短い長さ。
-     * （途中で別のwayに乗れば時間に関係なく通過は分かれる）
      */
     val maxPassageGapMs: Long = 60_000,
+
+    /**
+     * 直前に乗っていたwayへの「粘着」の強さ。新しいwayがこれ以上近くなければ乗り換えない。
+     *
+     * 5m：並走する2本のfootway（実測の対象圏では歩道と車道側の歩行者通路が
+     * 5〜10m間隔で並ぶ）の中間でGPSがふらつくと、最寄り判定だけでは数秒ごとに
+     * A→B→A と札が入れ替わる。実散歩のログでは14秒のあいだに並走2本の両方が
+     * 通過として数えられた。「いま乗っている道を続けて歩いている」方が
+     * 「1サンプルおきに隣の道へ乗り換える」より圧倒的にありそうなので、
+     * **乗り換えには明確な差を要求する**。
+     *
+     * 5mはGPSの1サンプルぶんのふらつき（水平誤差3〜5m）と同程度。これ未満だと
+     * 粘着が効かず、大きくしすぎると本当に曲がったときの乗り換えが遅れて
+     * 交差点の手前ぶんが元の道に食われる（0にすればこの機構は無効）。
+     */
+    val hysteresisMarginMeters: Double = 5.0,
+
+    /**
+     * 別のwayを挟んで同じwayに戻ってきたとき、これ未満の間隔なら同じ通過に併合する。
+     *
+     * 60秒：交差点でAを歩いている途中、横断する道Bに数秒だけスナップして
+     * すぐAに戻る形が実散歩で何度も起きた。素直に数えるとAが2回になるが、
+     * 実際には1回通っただけ。[hysteresisMarginMeters] で減らしても、
+     * 交差点の中心では本当にBの方が近いので残る（ラベルは正しく、数え方の問題）。
+     *
+     * 60秒（＝[maxPassageGapMs] と同じ）にしてあるのは、「往復したら2回」の設計
+     * （design.md §11「成長の入力は通過ごと」）を守るため：徒歩で1分あれば
+     * 80m前後は離れられるので、1分以上空いてから戻ってきたなら本当に往復している。
+     * 短くすると交差点の振動が残り、長くすると近所を周回する散歩で回数が減る。
+     */
+    val revisitMergeGapMs: Long = 60_000,
 ) {
     init {
         require(maxAccuracyMeters > 0) { "maxAccuracyMeters は正の値" }
@@ -74,6 +104,8 @@ data class MapMatchingConfig(
         require(maxSnapDistanceMeters > 0) { "maxSnapDistanceMeters は正の値" }
         require(minRunSamples >= 1) { "minRunSamples は1以上" }
         require(maxPassageGapMs >= 0) { "maxPassageGapMs は0以上" }
+        require(hysteresisMarginMeters >= 0) { "hysteresisMarginMeters は0以上" }
+        require(revisitMergeGapMs >= 0) { "revisitMergeGapMs は0以上" }
     }
 
     companion object {

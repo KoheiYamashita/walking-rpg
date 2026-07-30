@@ -79,9 +79,17 @@ class GetWalkReviewUseCaseTest {
         timestampMs = SyntheticWalk.START_MS + minute * 60_000L,
     )
 
-    /** 30分・2.3kmの散歩1回を仕込む（design.md §3 のウォークスルーの数字）。 */
+    /**
+     * 30分・実移動100mの散歩1回を仕込む（design.md §3 のウォークスルーの縮小版）。
+     *
+     * 距離は way長の合算ではなく**軌跡から**出る（`WalkDistanceCalculator`）ので、
+     * サンプル列まで入れないと0kmになる。10m刻みで東へ10区間＝100m。
+     */
     private suspend fun tuesdayWalk(fixture: Fixture): Long {
         val sessionId = fixture.sessions.startSession(SyntheticWalk.START_MS)
+        SyntheticWalk.samples(
+            points = List(11) { index -> SyntheticWalk.point(northMeters = 0.0, eastMeters = index * 10.0) },
+        ).forEach { fixture.sessions.appendSample(it.copy(sessionId = sessionId)) }
         fixture.sessions.endSession(
             sessionId = sessionId,
             endedAtMs = SyntheticWalk.START_MS + 30 * 60_000L,
@@ -106,7 +114,7 @@ class GetWalkReviewUseCaseTest {
 
         val review = checkNotNull(useCase(fixture, listOf(waterSpecies)).invoke(sessionId))
 
-        assertEquals(2_300.0, review.distanceMeters, "今日の道＝通った道の長さの合算")
+        assertEquals(100.0, review.distanceMeters, 0.5, "歩いた距離＝軌跡の実移動")
         assertEquals(30 * 60_000L, review.durationMs)
         assertEquals(
             listOf("けやき通り", null),
@@ -127,7 +135,7 @@ class GetWalkReviewUseCaseTest {
         val review = checkNotNull(useCase(fixture, listOf(waterSpecies)).invoke(sessionId))
 
         assertNull(review.weather, "後付け取得が済んでいない＝行が無い")
-        assertEquals(2_300.0, review.distanceMeters, "数値サマリは天候を待たない")
+        assertEquals(100.0, review.distanceMeters, 0.5, "数値サマリは天候を待たない")
     }
 
     @Test

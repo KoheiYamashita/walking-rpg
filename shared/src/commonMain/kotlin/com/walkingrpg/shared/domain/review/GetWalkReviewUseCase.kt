@@ -22,7 +22,7 @@ import com.walkingrpg.shared.domain.weather.SessionWeatherRepository
  *
  * ```
  * walk_session（時間）
- *   + passage × way マスタ（今日の道の距離）
+ *   + location_sample（歩いた距離）
  *   + way_growth の引き直し2回（今日育った道）
  *   + codex_progress の引き直し2回（今日の発見・予兆）
  *   + session_weather（あれば1行）
@@ -52,6 +52,7 @@ class GetWalkReviewUseCase(
     private val getCodex: GetCodexUseCase,
     private val growthConfig: GrowthConfig = GrowthConfig.DEFAULT,
     private val codexConfig: CodexConfig = CodexConfig.DEFAULT,
+    private val walkDistanceConfig: WalkDistanceConfig = WalkDistanceConfig.DEFAULT,
     /** 対象の種。差し替えられるのはテストのためで、本番は手書きのカタログ全部。 */
     private val catalog: List<Species> = SpeciesCatalog.ALL,
 ) {
@@ -77,7 +78,11 @@ class GetWalkReviewUseCase(
             // 記録中の経過を出す口はここには要らない（振り返りは畳んだあとに開くもの）。
             // 開始直後に開かれても0にはならないよう、終了時刻が無ければ開始時刻を使う。
             durationMs = session.durationMs(nowMs = session.endedAtMs ?: session.startedAtMs),
-            distanceMeters = WalkReviewCalculator.distanceMeters(sessionPassages, ways),
+            // 距離は軌跡から出す（way長の合算ではない＝WalkDistanceCalculator のKDoc）。
+            distanceMeters = WalkDistanceCalculator.distanceMeters(
+                samples = walkSessionRepository.samples(sessionId),
+                config = walkDistanceConfig,
+            ),
             weather = sessionWeatherRepository.weather(sessionId),
             grownWays = grownWays,
             discoveredSpecies = discovered,

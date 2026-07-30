@@ -27,10 +27,11 @@ import com.walkingrpg.shared.domain.weather.SessionWeather
  * （`WalkEvent.GrowthStageUp` のKDoc）。ここは `passage` からの再計算で出すので、
  * プロセスを再起動しても過去のセッションを開き直しても**同じ振り返りが出る**（冪等）。
  *
- * @param distanceMeters 「今日の道」＝そのセッションで通ったwayの長さの合計
- *  （同じ道を往復しても1本ぶん）。測位サンプル間の距離の積み上げではないので、
- *  GPSの揺れで水増しされない。`walk_session` に距離列は持たず、毎回この形で導く
- *  （architecture.md §4「導出テーブルはすべて passage から再計算できる」と同じ考え方）。
+ * @param distanceMeters 「歩いた距離」＝そのセッションの軌跡から出した**実移動距離**
+ *  （`WalkDistanceCalculator`）。通ったwayの長さの合算ではない：あちらは少しでも
+ *  触れた道を全長ぶん数えるので、実測で2倍近くに膨らんだ（design.md §11）。
+ *  `walk_session` に距離列は持たず、毎回 `location_sample` から導く
+ *  （architecture.md §4「導出テーブルはすべて再計算できる」と同じ考え方）。
  * @param weather 後付け取得（`SessionWeatherRepository`）が済んでいれば天候。
  *  **まだ取れていなければ `null`**＝画面はその行を出さない（数値サマリは残りだけで成立する）。
  * @param grownWays そのセッションの通過によって段階が上がった道（way ID順）。

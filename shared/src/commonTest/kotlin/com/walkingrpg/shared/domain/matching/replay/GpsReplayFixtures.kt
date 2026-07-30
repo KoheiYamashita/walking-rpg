@@ -15,12 +15,20 @@ package com.walkingrpg.shared.domain.matching.replay
  */
 internal object GpsReplayFixtures {
 
-    /** 合成データ1本目：本通りを東へ→交差点で北へ曲がる。期待は通過2本。 */
+    /**
+     * 合成データ1本目：本通りを東へ→交差点で北へ曲がる。期待は通過2本。
+     *
+     * way 102 の代表時刻が交差点到達の**1サンプル後**（1767225805000）なのは、
+     * ヒステリシス（`MapMatchingConfig.hysteresisMarginMeters`）が入ったため。
+     * 交差点手前のサンプル（1767225800000）は本通りから5m・footwayから3mで、
+     * 「明確に近い（5m以上）」を満たさないので乗り換えを1件ぶん待つ。
+     * 曲がった事実も回数も変わらないので、期待値の方を更新してある。
+     */
     val TURN_AT_CORNER: String = """
         {
           "schemaVersion": 1,
           "name": "synthetic-turn-at-corner",
-          "note": "合成データ。本通りを東へ歩いて交差点で北へ曲がる。途中に精度62mのサンプルを1件混ぜてある。",
+          "note": "合成データ。本通りを東へ歩いて交差点で北へ曲がる。途中に精度62mのサンプルを1件混ぜてある。曲がった判定は交差点の1サンプル先（ヒステリシス）。",
           "ways": [
             {
               "id": 101,
@@ -103,7 +111,7 @@ internal object GpsReplayFixtures {
           },
           "expectedPassages": [
             { "wayId": 101, "ts": 1767225600000 },
-            { "wayId": 102, "ts": 1767225800000 }
+            { "wayId": 102, "ts": 1767225805000 }
           ]
         }
     """.trimIndent()

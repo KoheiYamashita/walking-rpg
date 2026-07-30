@@ -2,7 +2,6 @@ package com.walkingrpg.shared.domain.review
 
 import com.walkingrpg.shared.domain.matching.Passage
 import com.walkingrpg.shared.domain.matching.SessionVisit
-import com.walkingrpg.shared.domain.osm.Way
 
 /**
  * 「そのセッションが何をもたらしたか」を確定データから引き直す純関数
@@ -22,24 +21,6 @@ import com.walkingrpg.shared.domain.osm.Way
  * 現在時刻も乱数も使わないので、何度呼んでも・いつ呼んでも同じ結果になる。
  */
 object WalkReviewCalculator {
-
-    /**
-     * 「今日の道」＝そのセッションで通ったwayの長さの合計（メートル）。
-     *
-     * **同じ道を何度通っても1本ぶん**（way IDで重複排除する）。測位サンプル間の
-     * 距離を積み上げないのは、GPSの揺れがそのまま距離の水増しになるから。
-     * design.md §3 の「今日の道2.3km」はこの数字。
-     *
-     * マスタに無いway（対象圏を取り直したあとに残った古い通過）は長さが引けないので
-     * 落とす＝距離が少し短く出るだけで、次の再取り込みで揃う。
-     */
-    fun distanceMeters(sessionPassages: List<Passage>, ways: List<Way>): Double {
-        if (sessionPassages.isEmpty()) return 0.0
-        val lengthByWay = ways.associate { it.id to it.lengthMeters }
-        return sessionPassages
-            .mapTo(mutableSetOf()) { it.wayId }
-            .sumOf { wayId -> lengthByWay[wayId] ?: 0.0 }
-    }
 
     /**
      * 全通過の道ごとの回数から、そのセッションぶんを引く（＝「その散歩が無かった世界」）。

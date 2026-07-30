@@ -65,7 +65,6 @@ class GenerateMonthlySnapshotsUseCaseTest {
             getMonthlySnapshotStats = GetMonthlySnapshotStatsUseCase(
                 walkSessionRepository = sessions,
                 passageRepository = passages,
-                osmMasterRepository = osm,
                 codexProgressRepository = codex,
                 calendarDays = calendarDays,
                 catalog = emptyList(),
@@ -231,7 +230,6 @@ class GenerateMonthlySnapshotsUseCaseTest {
             getMonthlySnapshotStats = GetMonthlySnapshotStatsUseCase(
                 walkSessionRepository = fixture.sessions,
                 passageRepository = fixture.passages,
-                osmMasterRepository = fixture.osm,
                 codexProgressRepository = fixture.codex,
                 calendarDays = fixture.calendarDays,
                 catalog = emptyList(),
@@ -258,7 +256,6 @@ class GenerateMonthlySnapshotsUseCaseTest {
             getMonthlySnapshotStats = GetMonthlySnapshotStatsUseCase(
                 walkSessionRepository = fixture.sessions,
                 passageRepository = fixture.passages,
-                osmMasterRepository = fixture.osm,
                 codexProgressRepository = fixture.codex,
                 calendarDays = fixture.calendarDays,
                 catalog = emptyList(),

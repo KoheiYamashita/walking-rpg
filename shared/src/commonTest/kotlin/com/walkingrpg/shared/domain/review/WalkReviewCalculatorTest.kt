@@ -13,7 +13,6 @@ import com.walkingrpg.shared.domain.matching.Passage
 import com.walkingrpg.shared.domain.matching.SessionVisit
 import com.walkingrpg.shared.domain.matching.SyntheticWalk
 import com.walkingrpg.shared.domain.osm.PoiKind
-import com.walkingrpg.shared.domain.osm.Way
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -21,66 +20,23 @@ import kotlin.test.assertTrue
 /**
  * 「そのセッションが何をもたらしたか」を確定データから引き直す純関数（issue #15）。
  *
- * 見たいのは3つ：
- * - **今日の道**は通ったwayの長さの合算で、往復で二重に数えない
+ * 見たいのは2つ：
  * - セッションを除いた集計が正しい（＝差分が「今日ぶん」になる）
  * - **冪等・入力順非依存**（architecture.md §7「同じ passage 列 → 必ず同じ導出状態」）
+ *
+ * 距離はここには無い（`WalkDistanceCalculatorTest`）：way長の合算をやめて
+ * GPS軌跡の実移動に変えたので、道の集計とは材料そのものが違う（design.md §11）。
  */
 class WalkReviewCalculatorTest {
 
     private val sessionId = 7L
     private val otherSessionId = 8L
 
-    private fun way(id: Long, lengthMeters: Double): Way = Way(
-        id = id,
-        name = null,
-        highway = "residential",
-        geometry = emptyList(),
-        lengthMeters = lengthMeters,
-    )
-
     private fun passage(wayId: Long, minute: Long, sessionId: Long = this.sessionId) = Passage(
         sessionId = sessionId,
         wayId = wayId,
         timestampMs = SyntheticWalk.START_MS + minute * 60_000L,
     )
-
-    @Test
-    fun 今日の道は通った道の長さの合算() {
-        val passages = listOf(passage(1L, 0), passage(2L, 3))
-
-        val meters = WalkReviewCalculator.distanceMeters(
-            sessionPassages = passages,
-            ways = listOf(way(1L, 800.0), way(2L, 1_500.0), way(3L, 400.0)),
-        )
-
-        assertEquals(2_300.0, meters, "通っていない道（3）は入らない")
-    }
-
-    @Test
-    fun 同じ道を往復しても長さは二重に数えない() {
-        // 道の成長は通過ごとに数える（design.md §4.1）が、距離は道の長さなので1本ぶん
-        val passages = listOf(passage(1L, 0), passage(1L, 10))
-
-        assertEquals(
-            800.0,
-            WalkReviewCalculator.distanceMeters(passages, listOf(way(1L, 800.0))),
-        )
-    }
-
-    @Test
-    fun マスタに無い道は距離に入らない() {
-        // 対象圏を取り直したあとに残った古い通過。落ちずに短く出るだけ
-        assertEquals(
-            0.0,
-            WalkReviewCalculator.distanceMeters(listOf(passage(99L, 0)), listOf(way(1L, 800.0))),
-        )
-    }
-
-    @Test
-    fun 通過が無ければ距離は0() {
-        assertEquals(0.0, WalkReviewCalculator.distanceMeters(emptyList(), listOf(way(1L, 800.0))))
-    }
 
     @Test
     fun 除外した集計はそのセッションの通過ぶんだけ減る() {
