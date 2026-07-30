@@ -8,6 +8,7 @@ import com.walkingrpg.shared.domain.review.ConsumePendingReviewUseCase
 import com.walkingrpg.shared.domain.review.ObservePendingReviewUseCase
 import com.walkingrpg.shared.domain.review.RequestReviewForFinishedWalkUseCase
 import com.walkingrpg.shared.domain.setup.IsSetupCompletedUseCase
+import com.walkingrpg.shared.domain.snapshot.GenerateMonthlySnapshotsUseCase
 import com.walkingrpg.shared.domain.steps.ImportDailyStepsUseCase
 import com.walkingrpg.shared.domain.walk.ObserveFinishedWalksUseCase
 import com.walkingrpg.shared.domain.walk.ObserveIsWalkingUseCase
@@ -23,9 +24,10 @@ import kotlinx.coroutines.launch
 /**
  * 画面をまたいで効く「アプリ全体の状態」を持つViewModel。
  *
- * 用途は7つ：記録中の画面ON維持、初回セットアップのゲート、散歩が終わったときの
+ * 用途は8つ：記録中の画面ON維持、初回セットアップのゲート、散歩が終わったときの
  * 導出の作り直し、天候の後付け取得、歩数の取り込み（押し忘れ救済）、
- * LLM生成のドレイン、そして振り返りを開く合図。
+ * 月次スナップショットの生成（月をまたいだぶんの穴埋め）、LLM生成のドレイン、
+ * そして振り返りを開く合図。
  * どれも画面の切り替えとは無関係なアプリ全体の関心事なので、各画面のViewModelに配らず
  * ここ1箇所で持つ（二重管理を避ける。architecture.md §2 の役割規約どおりUseCaseしか知らない）。
  */
@@ -36,6 +38,7 @@ class AppViewModel(
     private val recomputeAfterWalk: RecomputeAfterWalkUseCase,
     private val fetchMissingSessionWeather: FetchMissingSessionWeatherUseCase,
     private val importDailySteps: ImportDailyStepsUseCase,
+    private val generateMonthlySnapshots: GenerateMonthlySnapshotsUseCase,
     private val drainLlmGenerationQueue: DrainLlmGenerationQueueUseCase,
     private val requestReviewForFinishedWalk: RequestReviewForFinishedWalkUseCase,
     observePendingReview: ObservePendingReviewUseCase,
@@ -118,6 +121,11 @@ class AppViewModel(
             // 「昨日はけっこう歩いたんだね」が一言の材料になるから（GetWalkRemarkContextUseCase）。
             // 起動のたびに走らせても1日1行に収束する（ImportDailyStepsUseCase は冪等）。
             importSteps()
+            // 月をまたいでいれば、まだ作っていない月のスナップショットを作る（issue #17）。
+            // 起動時にしか走らない口なので、月末に起きていなくても次の起動で追いつく
+            // （GenerateMonthlySnapshotsUseCase のKDoc）。文章の生成より前に置くのは、
+            // 通信の要らない処理（数値＋描画）を先に済ませるという既存の順序に合わせて。
+            generateSnapshots()
             drainLlmGeneration()
         }
         // 散歩が終わったら passage → way_growth を作り直す（architecture.md §5「帰宅後」）。
@@ -232,6 +240,27 @@ class AppViewModel(
             throw cancellation
         } catch (error: Throwable) {
             // 歩数が取れなかっただけ。次の起動でやり直す。
+        }
+    }
+
+    /**
+     * まだ作っていない月のスナップショットを作る（design.md §4.5・issue #17）。
+     *
+     * **失敗は握る**：作れなかった月は次の起動でもう一度対象になる
+     * （生成は「行が無い月」を数え直す冪等な処理）。1枚が作れなかったからといって
+     * 散歩の記録（真実の源）に欠けは出ないし、既に作った月の画像も無傷
+     * （一度作った月は書き換えない＝`Snapshot.sq`）。
+     *
+     * 状態としても残さないのは、これが「気付いたときに増える」ものだから：
+     * 描画に失敗する状況（メモリ不足など）は次の起動では起きていないことが多い。
+     */
+    private suspend fun generateSnapshots() {
+        try {
+            generateMonthlySnapshots()
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (error: Throwable) {
+            // アルバムが1枚増えなかっただけ。次の起動でやり直す。
         }
     }
 

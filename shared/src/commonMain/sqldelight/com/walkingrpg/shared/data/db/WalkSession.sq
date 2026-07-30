@@ -71,6 +71,13 @@ FROM walk_session
 WHERE started_at >= :fromMs AND started_at < :untilMs
 ORDER BY started_at;
 
+-- いちばん古い散歩の開始時刻（月次スナップショットの生成範囲の下端。issue #17）。
+-- 1件も無ければ NULL が1行返る（MIN の性質）。
+-- selectSessionSummaries を舐めないのは、見たいのが1つの値だけで、
+-- あちらはサンプル数の相関サブクエリを全件ぶん回すから。
+selectOldestSessionStartedAt:
+SELECT MIN(started_at) AS oldest_started_at FROM walk_session;
+
 selectSessionSummaries:
 SELECT
     s.id,

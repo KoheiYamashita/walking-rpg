@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.backhandler.BackHandler
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.walkingrpg.app.ui.KeepScreenOn
+import com.walkingrpg.app.ui.album.AlbumScreen
 import com.walkingrpg.app.ui.codex.CodexScreen
 import com.walkingrpg.app.ui.home.HomeScreen
 import com.walkingrpg.app.ui.map.MapScreen
@@ -36,6 +37,9 @@ private sealed interface Screen {
     data object Home : Screen
     data object Map : Screen
     data object Codex : Screen
+
+    /** 月次スナップショットのアルバム（design.md §4.5・issue #17）。 */
+    data object Album : Screen
 
     /** 振り返り（design.md §3 の 17:08）。 */
     data class Review(val sessionId: Long) : Screen
@@ -122,6 +126,7 @@ private fun MainNavigation(
         Screen.Home -> HomeScreen(
             onOpenMap = { screen = Screen.Map },
             onOpenCodex = { screen = Screen.Codex },
+            onOpenAlbum = { screen = Screen.Album },
             // 過去の散歩も同じ画面で開く（振り返りは冪等に組み直せる＝GetWalkReviewUseCase）
             onOpenReview = { sessionId -> screen = Screen.Review(sessionId) },
         )
@@ -129,6 +134,8 @@ private fun MainNavigation(
         Screen.Map -> MapScreen(onBack = { screen = Screen.Home })
         // 図鑑の中の一覧⇄詳細は CodexScreen 自身が持つ（BackHandler はここの1階層しか見ない）
         Screen.Codex -> CodexScreen(onBack = { screen = Screen.Home })
+        // 一覧⇄拡大表示は AlbumScreen 自身が持つ（図鑑と同じ形）
+        Screen.Album -> AlbumScreen(onBack = { screen = Screen.Home })
         is Screen.Review -> ReviewScreen(
             sessionId = current.sessionId,
             onBack = { screen = Screen.Home },

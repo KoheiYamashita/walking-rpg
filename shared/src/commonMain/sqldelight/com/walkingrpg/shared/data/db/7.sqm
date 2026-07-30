@@ -1,0 +1,22 @@
+-- v7 → v8：月次スナップショット snapshot を足す（issue #17）。
+--
+-- v7 の端末は 1.sqm〜6.sqm を流し終えた状態なので、ここでも中身はバージョンで確定する。
+-- 1.sqm のような IF NOT EXISTS は書かない（あれはスパイク期の後始末。
+-- 付けると「作られなかった」事故が黙って通る）。
+--
+-- 導出キャッシュではなく**真実の源に準ずる**（画像は生成時点の状態で、passage から
+-- 再生成しない）。値の移し替え先が無い代わりに作り直しもできないので、既存の端末では
+-- 行が0件＝アルバムが空の状態から始まる。更新前の月の画像は**遡って作られない**：
+-- 手元にあるのは今の way_growth（＝今の街の姿）だけで、半年前の姿は復元できないため、
+-- 過去の月に今の絵を貼るくらいなら並べない方が嘘にならない。
+-- 次に月が変わったときの1枚から積まれていく。
+--
+-- 中身は Snapshot.sq の CREATE 文と1文字単位で揃えること。ズレると
+-- verifyMigrations（shared/build.gradle.kts）がビルドで落とす。
+
+CREATE TABLE snapshot (
+    month      TEXT NOT NULL PRIMARY KEY, -- 端末ローカル暦の 'YYYY-MM'（1ヶ月に1行）
+    image_path TEXT NOT NULL,             -- 永続領域からの相対パス（'snapshots/2026-06.png'）
+    stats_json TEXT NOT NULL,             -- MonthlySnapshotStats のJSON（schemaVersion 付き）
+    created_at INTEGER NOT NULL           -- epoch millis（この行を書いた時刻。月の時刻ではない）
+);

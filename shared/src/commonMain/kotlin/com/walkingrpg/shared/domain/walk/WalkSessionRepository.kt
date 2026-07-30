@@ -64,4 +64,12 @@ interface WalkSessionRepository {
      * 押し忘れではない**（押したあとどう終わったかは関係ない）。
      */
     suspend fun sessionsStartedBetween(fromMs: Long, untilMs: Long): List<WalkSession>
+
+    /**
+     * いちばん古い散歩の開始時刻（1件も無ければ `null`）。
+     *
+     * 月次スナップショット（issue #17）の生成範囲の下端。「記録を始めた月」から
+     * 先月までを埋めるので、必要なのは最古の1点だけ＝一覧を舐めずに `MIN` で引く。
+     */
+    suspend fun oldestSessionStartedAtMs(): Long?
 }

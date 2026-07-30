@@ -26,6 +26,7 @@ import com.walkingrpg.shared.data.matching.PassageRepositoryImpl
 import com.walkingrpg.shared.data.osm.OsmMasterRepositoryImpl
 import com.walkingrpg.shared.data.review.InMemoryPendingReviewRepository
 import com.walkingrpg.shared.data.review.SystemTimeOfDayResolver
+import com.walkingrpg.shared.data.snapshot.SnapshotRepositoryImpl
 import com.walkingrpg.shared.data.osm.OverpassConfig
 import com.walkingrpg.shared.data.osm.OverpassOsmAreaSource
 import com.walkingrpg.shared.data.osm.osmHttpClient
@@ -85,6 +86,12 @@ import com.walkingrpg.shared.domain.review.PendingReviewRepository
 import com.walkingrpg.shared.domain.review.RequestPendingReviewUseCase
 import com.walkingrpg.shared.domain.review.RequestReviewForFinishedWalkUseCase
 import com.walkingrpg.shared.domain.review.TimeOfDayResolver
+import com.walkingrpg.shared.domain.snapshot.GenerateMonthlySnapshotsUseCase
+import com.walkingrpg.shared.domain.snapshot.GetMonthlySnapshotSceneUseCase
+import com.walkingrpg.shared.domain.snapshot.GetMonthlySnapshotStatsUseCase
+import com.walkingrpg.shared.domain.snapshot.GetSnapshotAlbumUseCase
+import com.walkingrpg.shared.domain.snapshot.ReadSnapshotImageUseCase
+import com.walkingrpg.shared.domain.snapshot.SnapshotRepository
 import com.walkingrpg.shared.domain.setup.CompleteSetupUseCase
 import com.walkingrpg.shared.domain.setup.IsSetupCompletedUseCase
 import com.walkingrpg.shared.domain.setup.LlmConnectionTester
@@ -431,6 +438,30 @@ val sharedModule = module {
     factoryOf(::ConsumePendingReviewUseCase)
     // 散歩終了イベントからの自動遷移（放置セッションは弾く）。結線は AppViewModel
     factoryOf(::RequestReviewForFinishedWalkUseCase)
+
+    // --- 月次スナップショット（issue #17） ---
+    // snapshot は真実の源に準ずる（作り直さない）ので、書き口は「無ければ入れる」1本だけ。
+    // 画像の置き場（SnapshotImageStore）はプラットフォーム側（platformModule）。
+    // 描画（MonthlySnapshotRenderer）だけは **UI層（AppModule）が登録する**：
+    // 描画APIがCompose側にしか無いため（MonthlySnapshotRenderer のKDoc「実装がUI層にある
+    // 唯一のポート」）。この1個だけ sharedModule 単体では解決できないので、
+    // SharedModuleVerifyTest の extraTypes に挙げてある。
+    single<SnapshotRepository> { SnapshotRepositoryImpl(get()) }
+    factoryOf(::GetMonthlySnapshotSceneUseCase)
+    // 種カタログは手書きの定数なのでDIに載せない（GetCodexUseCase と同じ理由：
+    // factoryOf にすると Koin が List<Species> の定義を探して落ちる）。
+    factory {
+        GetMonthlySnapshotStatsUseCase(
+            walkSessionRepository = get(),
+            passageRepository = get(),
+            osmMasterRepository = get(),
+            codexProgressRepository = get(),
+            calendarDays = get(),
+        )
+    }
+    factoryOf(::GenerateMonthlySnapshotsUseCase)
+    factoryOf(::GetSnapshotAlbumUseCase)
+    factoryOf(::ReadSnapshotImageUseCase)
 
     // --- 初回セットアップ（issue #6） ---
     // 秘密（APIキー・自宅座標）と非秘密（URL・モデル名・完了フラグ）の振り分けは

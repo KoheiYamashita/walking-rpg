@@ -10,6 +10,7 @@ import com.walkingrpg.shared.data.llm.LlmCacheRepositoryImpl
 import com.walkingrpg.shared.data.llm.UtteranceLogRepositoryImpl
 import com.walkingrpg.shared.data.matching.PassageRepositoryImpl
 import com.walkingrpg.shared.data.osm.OsmMasterRepositoryImpl
+import com.walkingrpg.shared.data.snapshot.SnapshotRepositoryImpl
 import com.walkingrpg.shared.data.steps.StepImportRepositoryImpl
 import com.walkingrpg.shared.data.weather.SessionWeatherRepositoryImpl
 import com.walkingrpg.shared.domain.codex.CodexProgress
@@ -24,6 +25,10 @@ import com.walkingrpg.shared.domain.llm.poiFlavorLogicalKey
 import com.walkingrpg.shared.domain.growth.WayGrowth
 import com.walkingrpg.shared.domain.matching.Passage
 import com.walkingrpg.shared.domain.matching.SyntheticWalk
+import com.walkingrpg.shared.domain.snapshot.CalendarMonth
+import com.walkingrpg.shared.domain.snapshot.MonthlySnapshotStats
+import com.walkingrpg.shared.domain.snapshot.Snapshot
+import com.walkingrpg.shared.domain.snapshot.snapshotImagePath
 import com.walkingrpg.shared.domain.steps.CalendarDay
 import com.walkingrpg.shared.domain.steps.StepImport
 import com.walkingrpg.shared.domain.walk.SessionEndReason
@@ -33,6 +38,7 @@ import kotlinx.coroutines.test.runTest
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -120,6 +126,7 @@ class DatabaseMigrationTest {
                 "passage",
                 "poi",
                 "session_weather",
+                "snapshot",
                 "step_import",
                 "utterance_log",
                 "walk_session",
@@ -129,7 +136,7 @@ class DatabaseMigrationTest {
             driver.tableNames(),
             "way / poi / passage / way_growth（1.sqm）・step_import（2.sqm）・" +
                 "session_weather（3.sqm）・llm_cache（4.sqm）・codex_progress（5.sqm）・" +
-                "utterance_log（6.sqm）が足される",
+                "utterance_log（6.sqm）・snapshot（7.sqm）が足される",
         )
     }
 
@@ -267,6 +274,42 @@ class DatabaseMigrationTest {
             ),
             "切り口の除外集合が引ける（place_ref × angle の索引ごと往復する）",
         )
+
+        // 月次スナップショット（7.sqm で足した snapshot）。
+        // 更新しただけの端末ではアルバムが空から始まり、次に月が変わったぶんから積まれる
+        // （7.sqm のコメント「更新前の月の画像は遡って作られない」）
+        val snapshots = SnapshotRepositoryImpl(database)
+        assertTrue(snapshots.snapshots().isEmpty(), "更新直後は1枚も無い")
+        val month = CalendarMonth("2026-06")
+        val stats = MonthlySnapshotStats(
+            distanceMeters = 23_400.0,
+            newWayCount = 12,
+            discoveredSpeciesNames = listOf("テストカワセミ"),
+            sessionCount = 9,
+        )
+        assertTrue(
+            snapshots.insertIfAbsent(
+                Snapshot(
+                    month = month,
+                    imagePath = month.snapshotImagePath(),
+                    stats = stats,
+                    createdAtMs = SyntheticWalk.START_MS + 240_000L,
+                ),
+            ),
+        )
+        assertEquals(stats, snapshots.snapshot(month)?.stats, "stats_json がJSONを往復する")
+        assertFalse(
+            snapshots.insertIfAbsent(
+                Snapshot(
+                    month = month,
+                    imagePath = month.snapshotImagePath(),
+                    stats = stats.copy(distanceMeters = 0.0),
+                    createdAtMs = SyntheticWalk.START_MS + 300_000L,
+                ),
+            ),
+            "一度作った月は書き換わらない（INSERT OR IGNORE）",
+        )
+        assertEquals(23_400.0, snapshots.snapshot(month)?.stats?.distanceMeters)
     }
 
     @Test
@@ -292,6 +335,7 @@ class DatabaseMigrationTest {
                 "passage",
                 "poi",
                 "session_weather",
+                "snapshot",
                 "step_import",
                 "utterance_log",
                 "walk_session",

@@ -121,6 +121,11 @@ internal class WalkSessionRepositoryImpl(
             }
     }
 
+    // MIN は行が0件でも「NULL が1行」を返すので、executeAsOne の中身が null かどうかで見る。
+    override suspend fun oldestSessionStartedAtMs(): Long? = withContext(dispatcher) {
+        sessions.selectOldestSessionStartedAt().executeAsOne().oldest_started_at
+    }
+
     override suspend fun session(sessionId: Long): WalkSession? = withContext(dispatcher) {
         sessions.selectSession(sessionId).executeAsOneOrNull()?.let { row ->
             WalkSession(

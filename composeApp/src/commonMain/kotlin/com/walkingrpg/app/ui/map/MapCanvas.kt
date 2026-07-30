@@ -2,6 +2,7 @@ package com.walkingrpg.app.ui.map
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import com.walkingrpg.shared.domain.growth.GrowthStage
 import com.walkingrpg.shared.domain.map.GeoPoint
 import com.walkingrpg.shared.domain.map.MapCamera
@@ -48,6 +49,19 @@ internal fun stageColorHex(stage: GrowthStage): String = when (stage) {
     GrowthStage.TREE -> "#2F7D6B"
     GrowthStage.CREATURE -> "#1B5245"
 }
+
+/**
+ * [stageColorHex] をComposeの [Color] にしたもの。
+ *
+ * 月次スナップショット（issue #17）は地図SDKではなく自前のCanvasで描くので、
+ * 16進文字列ではなく [Color] が要る。色の**決定**は [stageColorHex] 側1箇所のままにして、
+ * ここは変換だけを引き受ける＝アルバムの色と地図の色がずれない。
+ */
+internal fun stageColor(stage: GrowthStage): Color =
+    Color(OPAQUE_ALPHA or stageColorHex(stage).removePrefix("#").toInt(radix = 16))
+
+/** `#RRGGBB` にはアルファが無いので、不透明として補う。 */
+private const val OPAQUE_ALPHA = 0xFF000000.toInt()
 
 /** 抽象レイヤーの線の太さ（dp相当）。 */
 internal const val WAY_LINE_WIDTH = 6f

@@ -50,6 +50,7 @@ import org.koin.compose.viewmodel.koinViewModel
 fun HomeScreen(
     onOpenMap: () -> Unit,
     onOpenCodex: () -> Unit,
+    onOpenAlbum: () -> Unit,
     onOpenReview: (Long) -> Unit,
     modifier: Modifier = Modifier,
     viewModel: HomeViewModel = koinViewModel(),
@@ -67,6 +68,7 @@ fun HomeScreen(
         onMessageShown = viewModel::onMessageShown,
         onOpenMap = onOpenMap,
         onOpenCodex = onOpenCodex,
+        onOpenAlbum = onOpenAlbum,
         onOpenReview = onOpenReview,
         modifier = modifier,
     )
@@ -83,6 +85,7 @@ fun HomeContent(
     onMessageShown: () -> Unit,
     onOpenMap: () -> Unit,
     onOpenCodex: () -> Unit,
+    onOpenAlbum: () -> Unit,
     onOpenReview: (Long) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -157,6 +160,11 @@ fun HomeContent(
             item {
                 TextButton(onClick = onOpenCodex, modifier = Modifier.fillMaxWidth()) {
                     Text("図鑑を見る")
+                }
+            }
+            item {
+                TextButton(onClick = onOpenAlbum, modifier = Modifier.fillMaxWidth()) {
+                    Text("アルバムを見る")
                 }
             }
 

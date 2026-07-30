@@ -1,0 +1,50 @@
+-- 月次スナップショット（architecture.md §4 / design.md §4.5「耐久コアの筆頭」）。
+--
+-- 真実の源（walk_session / location_sample / passage）に準ずる扱い：
+-- **画像は生成時点の状態で、passage から再生成しない。** 導出テーブル（way_growth /
+-- codex_progress）のように「捨てて作り直す」ことはしないこと。作り直すと、
+-- 引っ越し・転職・旅行がアルバムとして見える（design.md §4.5）という価値の中身、
+-- つまり「その月に見えていた街の姿」が今の街の姿で上書きされてしまう。
+-- 同じ理由で、既に行がある月は二度と書き換えない（insertSnapshot は INSERT OR IGNORE）。
+--
+-- image_path は**永続領域からの相対パス**（'snapshots/2026-06.png'）。絶対パスを入れないのは
+-- 端末のサンドボックスパスがOS更新・機種変更・再インストールで変わるためで、
+-- 手動エクスポート（architecture.md §6・issue #18）が「DBファイル＋snapshots/ ディレクトリ」を
+-- そのまま zip に入れるだけで済むのもこの形のおかげ。実際のルートの解決は
+-- プラットフォーム側（SnapshotImageStore）に閉じる。
+--
+-- 書き込み順は「画像ファイル → この行」（GenerateMonthlySnapshotsUseCase）。
+-- 逆にすると、途中で失敗したときに行だけ残って画像の無い月がアルバムに並ぶ。
+--
+-- stats_json はその月の数値（距離・新しい道・発見した種・散歩の回数）。
+-- 列に割らず1つのJSONにしてあるのは、Wrapped 的な語り（design.md §4.5）の材料が
+-- 増えるたびにマイグレーションを打つのを避けるためで、形の契約は
+-- MonthlySnapshotStatsCodec（schemaVersion 付き）が持つ。
+
+CREATE TABLE snapshot (
+    month      TEXT NOT NULL PRIMARY KEY, -- 端末ローカル暦の 'YYYY-MM'（1ヶ月に1行）
+    image_path TEXT NOT NULL,             -- 永続領域からの相対パス（'snapshots/2026-06.png'）
+    stats_json TEXT NOT NULL,             -- MonthlySnapshotStats のJSON（schemaVersion 付き）
+    created_at INTEGER NOT NULL           -- epoch millis（この行を書いた時刻。月の時刻ではない）
+);
+
+-- 一度作った月は壊さない（上のKDoc「二度と書き換えない」）。
+-- OR REPLACE にすると、穴埋め生成が走るたびに過去の画像が今の街の姿に置き換わる。
+insertSnapshot:
+INSERT OR IGNORE INTO snapshot(month, image_path, stats_json, created_at)
+VALUES (?, ?, ?, ?);
+
+-- アルバムの並び＝新しい月から（design.md §4.5「地図のアルバム」）。
+selectAllSnapshots:
+SELECT month, image_path, stats_json, created_at
+FROM snapshot
+ORDER BY month DESC;
+
+-- 「この月はもう作ったか」の判定（生成は冪等）。
+selectSnapshot:
+SELECT month, image_path, stats_json, created_at
+FROM snapshot
+WHERE month = ?;
+
+countSnapshots:
+SELECT COUNT(*) FROM snapshot;

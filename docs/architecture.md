@@ -86,7 +86,30 @@ iosApp/       # iOSエントリポイント
 - `step_import(date, steps, distance_estimate)` — 押し忘れ救済
 - `session_weather(session_id, condition, temperature, fetched_at)` — 帰宅後に天候APIで後付け確定。
   取得失敗は次回起動時にリトライ。欠測は「天候不明」として変奏・条件判定から除外
-- `snapshot(month, image_path, stats_json, created_at)` — 月次スナップショット（耐久コアの筆頭）
+- `snapshot(month, image_path, stats_json, created_at)` — 月次スナップショット（耐久コアの筆頭）。
+  `month` は端末ローカル暦の `'YYYY-MM'`。**画像は生成時点の状態で、`passage` からは再生成しない**
+  （その月に見えていた街の姿を今の姿で上書きしないため）。一度作った月は書き換えない
+  （`INSERT OR IGNORE`）。生成はアプリ起動時に「いちばん古い散歩の月〜先月」のうち行が無い月を
+  まとめて作る＝1ヶ月以上開かなかった穴も塞がる。当月は作らない（まだ終わっていない月の姿を
+  固定しない）。散歩が1件も無い月は行を作らない
+  - `image_path` は**永続領域からの相対パス**（`snapshots/2026-06.png`）。絶対パスは持たない：
+    サンドボックスのパスはOS更新・機種変更・再インストールで変わるうえ、手動エクスポート（§6）が
+    「DBファイル＋`snapshots/` ディレクトリ」を丸ごと入れるだけで済む。ルートの解決は
+    プラットフォーム側（`SnapshotImageStore`：Android `filesDir` / iOS `NSDocumentDirectory`
+    ＝どちらもOS自動バックアップの既定対象）。書き込み順は**画像 → DBの行**
+    （行だけ残ってファイルが無い「アルバム割れ」を作らない）
+  - 絵は**MapLibreのsnapshot APIを使わず自前のCanvasで描く**：背景タイルはオンライン取得なので
+    永久保存する1枚に焼けず、iOSの地図ビューはまだプレースホルダで片OSしか通らない。
+    描くのは design.md §8 の抽象レイヤーそのもの（単色の背景＋段階の色が付いた道＋月ラベル）で、
+    データは全部手元にある。色は地図画面と同じ `stageColorHex` を使う
+  - `stats_json` はその月の数値（距離・新しい道の本数・発見した種名・散歩の回数）。
+    `schemaVersion` を持つ（この列は作り直せないので、項目を足したとき古い行を読めなくしない）。
+    距離の物差しは振り返り（§4.5）と同じ `WalkReviewCalculator.distanceMeters` の月合計
+    ＝振り返りの足し算と一致する。セッションの月の帰属は `started_at` 基準
+  - **例外：ドメインのポート `MonthlySnapshotRenderer` の実装だけはUI層（composeApp）にある。**
+    描画APIが Compose にしかなく、`shared` は Compose に依存していないため。DIの登録も
+    `AppModule` 側で、`sharedModule` 単体の検証（`SharedModuleVerifyTest`）では
+    未提供の型として除外している
 
 ### マスタ（OSM取り込み）
 

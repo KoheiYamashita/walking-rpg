@@ -47,39 +47,27 @@ class GetMapSceneUseCase(
     /**
      * 育ちのある道だけを、形（マスタの `geometry`）と突き合わせて返す。
      *
-     * マスタに無いway ID（対象圏を取り直してOSM側から消えた道など）は黙って落とす。
-     * 形が引けないものは描きようがなく、`passage` 側は真実として残っているので、
-     * 次にマスタを取り直せば戻る＝ここで落とすのは表示だけ。
-     *
-     * 段階の低い順に並べるのは、地図SDKが後ろの要素を上に描くから。
-     * 交差点で重なったとき、育っている道の色が下に隠れないようにする。
+     * 突き合わせの規則（マスタに無い道・点が足りない道を落とす／段階の低い順に並べる）は
+     * 月次スナップショット（issue #17）と共有する純関数 [GrownWayShapes] に置いてある。
+     * ここが足すのは地図画面だけの都合＝「直近の散歩で育ったかどうか」の1つだけ。
      */
     private suspend fun highlights(): List<WayHighlight> {
-        val growths = wayGrowthRepository.growths()
-        if (growths.isEmpty()) return emptyList()
-
-        val shapeByWayId = osmMasterRepository.ways().associate { it.id to it.geometry }
         val stageRaisedWayIds = recentGrowthRepository.stageRaisedWayIds
 
-        return growths
-            .mapNotNull { growth ->
-                val shape = shapeByWayId[growth.wayId] ?: return@mapNotNull null
-                // 1点しかないwayは線にならない（マスタが壊れているとき）ので捨てる
-                if (shape.size < MIN_SHAPE_POINTS) return@mapNotNull null
+        return GrownWayShapes
+            .of(growths = wayGrowthRepository.growths(), ways = osmMasterRepository.ways())
+            .map { grown ->
                 WayHighlight(
-                    wayId = growth.wayId,
-                    shape = shape,
-                    stage = growth.stage,
-                    isNewlyGrown = growth.wayId in stageRaisedWayIds,
+                    wayId = grown.wayId,
+                    shape = grown.shape,
+                    stage = grown.stage,
+                    isNewlyGrown = grown.wayId in stageRaisedWayIds,
                 )
             }
-            .sortedBy { it.stage }
     }
 
     private companion object {
         /** 現在地が取れたときのズーム（散歩の縮尺＝街区が見える程度）。 */
         const val FOCUSED_ZOOM = 15.0
-
-        const val MIN_SHAPE_POINTS = 2
     }
 }

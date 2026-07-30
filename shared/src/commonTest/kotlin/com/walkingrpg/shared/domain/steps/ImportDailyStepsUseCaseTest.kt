@@ -1,5 +1,7 @@
 package com.walkingrpg.shared.domain.steps
 
+import com.walkingrpg.shared.domain.snapshot.CalendarMonth
+import com.walkingrpg.shared.domain.snapshot.MonthRange
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -59,6 +61,14 @@ class ImportDailyStepsUseCaseTest {
 
         override fun daysBetween(from: CalendarDay, until: CalendarDay): Int =
             fail("取り込みは日数の差を見ない")
+
+        // 月の計算（issue #17）も取り込みの関心ではない
+        override fun monthOf(day: CalendarDay): CalendarMonth = fail("取り込みは月を見ない")
+
+        override fun previousMonth(month: CalendarMonth): CalendarMonth =
+            fail("取り込みは月を見ない")
+
+        override fun monthRange(month: CalendarMonth): MonthRange = fail("取り込みは月を見ない")
     }
 
     private fun daily(day: CalendarDay, steps: Int, distance: Double? = null) =

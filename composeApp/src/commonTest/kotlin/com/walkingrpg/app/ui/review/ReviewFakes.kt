@@ -15,6 +15,8 @@ import com.walkingrpg.shared.domain.osm.OsmMasterCounts
 import com.walkingrpg.shared.domain.osm.OsmMasterRepository
 import com.walkingrpg.shared.domain.osm.Poi
 import com.walkingrpg.shared.domain.osm.Way
+import com.walkingrpg.shared.domain.snapshot.CalendarMonth
+import com.walkingrpg.shared.domain.snapshot.MonthRange
 import com.walkingrpg.shared.domain.steps.CalendarDay
 import com.walkingrpg.shared.domain.steps.CalendarDays
 import com.walkingrpg.shared.domain.steps.StepImport
@@ -34,8 +36,10 @@ import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.Instant
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
+import kotlinx.datetime.atStartOfDayIn
 import kotlinx.datetime.daysUntil
 import kotlinx.datetime.minus
+import kotlinx.datetime.plus
 import kotlinx.datetime.toLocalDateTime
 
 /**
@@ -71,6 +75,8 @@ internal class SingleSessionRepository(
     // 押し忘れの判定（issue #16）が引く口。この1件だけを持っているので範囲で絞って返す
     override suspend fun sessionsStartedBetween(fromMs: Long, untilMs: Long): List<WalkSession> =
         listOfNotNull(session).filter { it.startedAtMs >= fromMs && it.startedAtMs < untilMs }
+
+    override suspend fun oldestSessionStartedAtMs(): Long? = session?.startedAtMs
 
     private fun notUsed(): Nothing = error("振り返り画面では使わない")
 }
@@ -129,6 +135,23 @@ internal class UtcCalendarDays : CalendarDays {
 
     override fun daysBetween(from: CalendarDay, until: CalendarDay): Int =
         LocalDate.parse(from.iso).daysUntil(LocalDate.parse(until.iso))
+
+    override fun monthOf(day: CalendarDay): CalendarMonth = CalendarMonth(day.iso.take(7))
+
+    override fun previousMonth(month: CalendarMonth): CalendarMonth =
+        LocalDate.parse("${'$'}{month.iso}-01")
+            .minus(1, DateTimeUnit.MONTH)
+            .let { CalendarMonth(it.toString().take(7)) }
+
+    override fun monthRange(month: CalendarMonth): MonthRange {
+        val firstDay = LocalDate.parse("${'$'}{month.iso}-01")
+        return MonthRange(
+            fromMs = firstDay.atStartOfDayIn(TimeZone.UTC).toEpochMilliseconds(),
+            untilMs = firstDay.plus(1, DateTimeUnit.MONTH)
+                .atStartOfDayIn(TimeZone.UTC)
+                .toEpochMilliseconds(),
+        )
+    }
 }
 
 /** 通過を直接置ける [PassageRepository]。 */
