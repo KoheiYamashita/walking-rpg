@@ -1,0 +1,43 @@
+-- 生成済みテキストのキャッシュ（architecture.md §4「LLM」の llm_cache）。
+--
+-- 導出キャッシュ：捨てても生成し直せる（読み側は未生成の地点を定型文で凌ぐ。design.md §7）。
+-- 真実の源（walk_session / location_sample / passage）とは扱いが違う。
+--
+-- cache_key は「kind:論理キー」（例 POI_FLAVOR:poi:node/123）で、1論理キー1行。
+-- prompt_hash はそのテキストを作ったときのプロンプトの指紋で、引くときに突き合わせる：
+-- 一致しなければ「未生成」として作り直す＝プロンプトを直したら自然に作り直される
+-- （設計の詳細は LlmCacheRepository のKDoc）。
+--
+-- poi.id への外部キーは張らない。対象圏を取り直すとPOIマスタは全削除して作り直すので、
+-- FKがあると生成済みの文章が連鎖削除される＝課金し直しになる。
+-- 論理キーにOSMのIDを埋めてあるので、マスタが作り直されても同じ地物に再びヒットする。
+
+CREATE TABLE llm_cache (
+    cache_key   TEXT NOT NULL PRIMARY KEY, -- 「kind:論理キー」
+    kind        TEXT NOT NULL,             -- LlmTaskKind の name（POI_FLAVOR ...）
+    prompt_hash TEXT NOT NULL,             -- PromptHash（FNV-1a 64bitの16進16桁）
+    text        TEXT NOT NULL,             -- 生成された本文
+    created_at  INTEGER NOT NULL           -- epoch millis（この行を書いた時刻）
+);
+
+-- 事前バッチは種別ごとに全件読む（数百件を1件ずつ引かないため）。
+CREATE INDEX llm_cache_kind ON llm_cache(kind);
+
+-- 1論理キー1行の置き換え。プロンプトを直して作り直したときに古い行を残さない。
+upsertLlmCache:
+INSERT OR REPLACE INTO llm_cache(cache_key, kind, prompt_hash, text, created_at)
+VALUES (?, ?, ?, ?, ?);
+
+selectLlmCache:
+SELECT cache_key, kind, prompt_hash, text, created_at
+FROM llm_cache
+WHERE cache_key = ?;
+
+selectLlmCacheByKind:
+SELECT cache_key, kind, prompt_hash, text, created_at
+FROM llm_cache
+WHERE kind = ?
+ORDER BY cache_key;
+
+countLlmCache:
+SELECT COUNT(*) FROM llm_cache;

@@ -14,6 +14,10 @@
          normal権限なので実行時の許可ダイアログは出ない -->
     <uses-permission android:name="android.permission.VIBRATE" />
 
+    <!-- 回線種別の判定（AndroidNetworkStatus）。従量課金の回線でLLMの事前バッチを
+         走らせないために要る。normal権限なので実行時の許可ダイアログは出ない -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
     <!-- 歩数計（design.md §3「開始を押し忘れた日」）。許可されていなければ黙って
          取り込まない（HealthConnectDailyStepsSource）ので、無くても他の機能は動く。
          許可を求める導線は #16 / #20 で作る -->

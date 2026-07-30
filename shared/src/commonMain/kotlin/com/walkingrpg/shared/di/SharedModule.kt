@@ -13,9 +13,13 @@ import com.walkingrpg.shared.data.feedback.InMemoryWalkEventBus
 import com.walkingrpg.shared.data.feedback.WalkFeedbackImpl
 import com.walkingrpg.shared.data.growth.InMemoryRecentGrowthRepository
 import com.walkingrpg.shared.data.growth.WayGrowthRepositoryImpl
-import com.walkingrpg.shared.data.llm.HttpLlmConnectionTester
-import com.walkingrpg.shared.data.matching.PassageRepositoryImpl
+import com.walkingrpg.shared.data.llm.AnthropicLlmClient
+import com.walkingrpg.shared.data.llm.HttpLlmClientSelector
+import com.walkingrpg.shared.data.llm.LlmCacheRepositoryImpl
+import com.walkingrpg.shared.data.llm.LlmClientConnectionTester
+import com.walkingrpg.shared.data.llm.OpenAiLlmClient
 import com.walkingrpg.shared.data.llm.llmHttpClient
+import com.walkingrpg.shared.data.matching.PassageRepositoryImpl
 import com.walkingrpg.shared.data.osm.OsmMasterRepositoryImpl
 import com.walkingrpg.shared.data.osm.OverpassConfig
 import com.walkingrpg.shared.data.osm.OverpassOsmAreaSource
@@ -41,6 +45,13 @@ import com.walkingrpg.shared.domain.growth.RecentGrowthRepository
 import com.walkingrpg.shared.domain.growth.RecomputeAfterWalkUseCase
 import com.walkingrpg.shared.domain.growth.RecomputeWayGrowthUseCase
 import com.walkingrpg.shared.domain.growth.WayGrowthRepository
+import com.walkingrpg.shared.domain.llm.DrainLlmGenerationQueueUseCase
+import com.walkingrpg.shared.domain.llm.GetPoiFlavorUseCase
+import com.walkingrpg.shared.domain.llm.LlmCacheRepository
+import com.walkingrpg.shared.domain.llm.LlmClientSelector
+import com.walkingrpg.shared.domain.llm.LlmGenerationConfig
+import com.walkingrpg.shared.domain.llm.LlmGenerationQueue
+import com.walkingrpg.shared.domain.llm.PrebatchPoiFlavorUseCase
 import com.walkingrpg.shared.domain.map.GetMapSceneUseCase
 import com.walkingrpg.shared.domain.matching.MapMatchingConfig
 import com.walkingrpg.shared.domain.matching.PassageRepository
@@ -102,8 +113,9 @@ val APP_SCOPE = named("appScope")
 private val OSM_HTTP_CLIENT = named("osmHttpClient")
 
 /**
- * LLM疎通テスト用のHTTPクライアント（issue #6）。
- * リトライなし・短いタイムアウトで、OSM取り込み用とは方針が違うので分けてある。
+ * LLM呼び出し用のHTTPクライアント（issue #6 / #14）。
+ * 疎通確認と生成で同じ1個を使う（セットアップで確認した経路がそのまま生成に使われる）。
+ * リトライ方針・タイムアウトはOSM取り込み・天候とは違うので分けてある（`llmHttpClient`）。
  */
 private val LLM_HTTP_CLIENT = named("llmHttpClient")
 
@@ -242,13 +254,45 @@ val sharedModule = module {
     // （FetchMissingSessionWeatherUseCase のKDoc「実行は直列」）。
     singleOf(::FetchMissingSessionWeatherUseCase)
 
+    // --- LLM生成基盤（issue #14） ---
+    // 件数上限・出力上限・従量回線での抑止（LlmGenerationConfig）はここで差し替えられる。
+    // どのフォーマットを使うかはユーザーの設定（LlmConnectionSettings.format）で決まるので、
+    // 2実装を両方登録して HttpLlmClientSelector に振り分けさせる（天候と同じ形）。
+    single { LlmGenerationConfig.DEFAULT }
+    // 疎通確認（issue #6）もこの1個を使う（LLM_HTTP_CLIENT のKDoc）
+    single(LLM_HTTP_CLIENT) { llmHttpClient() }
+    single { AnthropicLlmClient(get(LLM_HTTP_CLIENT)) }
+    single { OpenAiLlmClient(get(LLM_HTTP_CLIENT)) }
+    single<LlmClientSelector> { HttpLlmClientSelector(get(), get()) }
+    single<LlmCacheRepository> { LlmCacheRepositoryImpl(get()) }
+    // 生成キューは「未生成を数え直して作る」冪等なドレイン（LlmGenerationQueue のKDoc）。
+    single<LlmGenerationQueue> {
+        PrebatchPoiFlavorUseCase(
+            osmMasterRepository = get(),
+            cacheRepository = get(),
+            setupRepository = get(),
+            clients = get(),
+            networkStatus = get(),
+            clock = get(),
+            config = get(),
+        )
+    }
+    // 起動時と散歩終了時の両方から呼ぶ1本（AppViewModel で結線）。
+    // UseCase では例外的に single にする：2つの呼び出し口が並行したときに
+    // 同じ生成を二度投げないよう実行を Mutex で直列化しており、
+    // その Mutex は全ての呼び出しで同じ1個でなければ意味がない
+    // （DrainLlmGenerationQueueUseCase のKDoc「実行は直列」）。
+    singleOf(::DrainLlmGenerationQueueUseCase)
+    // 散歩中の読み出し（通信しない）。生成できていない地点は定型文で凌ぐ
+    factoryOf(::GetPoiFlavorUseCase)
+
     // --- 初回セットアップ（issue #6） ---
     // 秘密（APIキー・自宅座標）と非秘密（URL・モデル名・完了フラグ）の振り分けは
     // SetupRepositoryImpl に閉じる。UI層はUseCaseしか見ない。
     single<SetupRepository> { SetupRepositoryImpl(get(), get()) }
-    single(LLM_HTTP_CLIENT) { llmHttpClient() }
-    // #14 で LlmClient を入れるときは、この bind を差し替えれば画面はそのまま動く
-    single<LlmConnectionTester> { HttpLlmConnectionTester(get(LLM_HTTP_CLIENT)) }
+    // 疎通確認は生成と同じ経路（LlmClient）で行う。実装は data/llm 側の薄いアダプタで、
+    // セットアップ画面（SetupViewModel）はこの bind の差し替えだけで #6 のまま動く
+    single<LlmConnectionTester> { LlmClientConnectionTester(get()) }
 
     factoryOf(::IsSetupCompletedUseCase)
     factoryOf(::LoadSetupSettingsUseCase)
