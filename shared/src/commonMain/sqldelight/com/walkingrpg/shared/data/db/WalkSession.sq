@@ -17,6 +17,29 @@ VALUES (?, NULL, NULL);
 lastInsertedId:
 SELECT last_insert_rowid();
 
+-- 手動インポート（architecture.md §6・issue #18）専用の書き口。
+-- 通常の記録は insertSession（IDはAUTOINCREMENT任せ）だが、バックアップの復元では
+-- **IDを保持しなければならない**：location_sample / passage / session_weather /
+-- utterance_log / llm_cache のキーが session_id で、採番し直すと参照が全部ずれる。
+-- 復元は deleteAllSessions のあとに走るので衝突しない（BackupStore のKDoc）。
+insertSessionWithId:
+INSERT INTO walk_session(id, started_at, ended_at, end_reason)
+VALUES (?, ?, ?, ?);
+
+-- エクスポート（issue #18）の読み口。ID順で出すのは、zipの中身が
+-- 同じDBからは必ず同じ並びになるようにするため（差分が見える形を保つ）。
+-- selectSessionSummaries を使わないのは、あちらがサンプル数の相関サブクエリを
+-- 全件ぶん回すうえ、エクスポートに要らない列を運ぶから。
+selectAllSessions:
+SELECT id, started_at, ended_at, end_reason
+FROM walk_session
+ORDER BY id;
+
+-- インポート（issue #18）の全入れ替え。真実の源を消す唯一の口で、
+-- **同じトランザクションで必ず挿入まで行う**（BackupStore.replaceAll）。
+deleteAllSessions:
+DELETE FROM walk_session;
+
 endSession:
 UPDATE walk_session
 SET ended_at = :endedAt, end_reason = :endReason

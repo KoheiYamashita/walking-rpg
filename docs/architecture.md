@@ -93,8 +93,8 @@ iosApp/       # iOSエントリポイント
   まとめて作る＝1ヶ月以上開かなかった穴も塞がる。当月は作らない（まだ終わっていない月の姿を
   固定しない）。散歩が1件も無い月は行を作らない
   - `image_path` は**永続領域からの相対パス**（`snapshots/2026-06.png`）。絶対パスは持たない：
-    サンドボックスのパスはOS更新・機種変更・再インストールで変わるうえ、手動エクスポート（§6）が
-    「DBファイル＋`snapshots/` ディレクトリ」を丸ごと入れるだけで済む。ルートの解決は
+    サンドボックスのパスはOS更新・機種変更・再インストールで変わるうえ、手動エクスポート（§6）で
+    **zipのエントリ名にそのまま使えて、復元先を計算し直さずに済む**。ルートの解決は
     プラットフォーム側（`SnapshotImageStore`：Android `filesDir` / iOS `NSDocumentDirectory`
     ＝どちらもOS自動バックアップの既定対象）。書き込み順は**画像 → DBの行**
     （行だけ残ってファイルが無い「アルバム割れ」を作らない）
@@ -226,13 +226,54 @@ GPS（1〜3秒間隔）→ 精度フィルタ → map matching（ローカルway
 「街の成長・図鑑・スナップショットは絶対に消さない」（design.md §6）の単一障害点は端末本体。
 サーバーなしのまま2段構えで潰す：
 
-- **OS自動バックアップ**：DBファイルとスナップショット画像を
-  Android Auto Backup / iCloudバックアップの対象に含める。
-  APIキーはセキュアストレージ側なのでバックアップに乗らない（＝安全）
-- **手動エクスポート/インポート**：真実の源（walk_session / location_sample / passage /
-  step_import / session_weather）＋**utterance_log**（再計算できない追記ログ。§4）
-  ＋スナップショット画像＋シナリオ進行をzipで書き出し・取り込み。
-  導出テーブルは復元後に再計算する（冪等性がここで効く）
+### OS自動バックアップ（設定済み）
+
+DBファイル（`databases` ドメイン）とスナップショット画像（Android `filesDir` /
+iOS `NSDocumentDirectory`）は、Android Auto Backup / iCloudバックアップの
+**既定の対象**に乗るようにしてある（`android:allowBackup="true"`）。
+
+APIキーと自宅座標は**除外する**：保存先の `walking_rpg_secrets.xml` を
+`backup_rules.xml`（API 30以下）と `data_extraction_rules.xml`（API 31+ の
+cloud-backup / device-transfer 両方）で外し、iOSは Keychain の
+`ThisDeviceOnly` に置く。鍵は Keystore にあって端末外に出ないので運んでも復号できないし、
+そもそも秘密を端末外に持ち出さない（design.md §9）。
+
+除外設定の `path` は `AndroidSecureStorage.PREFS_NAME` と一致していなければ意味がなく、
+食い違ってもビルドは通る（気付く機会が実機のバックアップを覗くしかない）ので、
+一致は `BackupRulesConsistencyTest` が縛っている。`BackupAgent` は書かない。
+
+### 手動エクスポート/インポート（zip）
+
+**行ベースのJSONをzipにまとめる方式。DBファイルのコピーは採らない**
+（`DatabaseDriverFactory` がパスを持たず、DBを閉じる経路もWAL checkpointの口も無い＝
+一貫したファイルを取り出せない。`VACUUM INTO` はminSdk 26で使えない。
+ファイル差し替えではSQLDelightの購読に通知が飛ばず再起動が必要になる。
+詳細は `ExportBackupUseCase` のKDoc）。
+
+zipの構成（`BackupArchiveCodec` が契約を持つ。`schemaVersion` で進化に耐える）：
+
+| エントリ | 中身 | 扱い |
+|---|---|---|
+| `manifest.json` | schemaVersion・作成時刻・各表の件数 | インポート前の検証に使う |
+| `walk_sessions.json` | walk_session（**IDを保持**） | 真実の源 |
+| `location_samples.json` | location_sample | 真実の源（自宅を含む実座標） |
+| `passages.json` | passage | **再マッチせずそのまま復元**（同一状態を厳密に戻す） |
+| `step_imports.json` | step_import | 位置が無く再現できない観測値 |
+| `session_weathers.json` | session_weather | 外部APIの観測値（過去日は二度と取れない） |
+| `utterance_logs.json` | utterance_log（idは持たない） | 再計算できない追記ログ |
+| `llm_cache.json` | llm_cache | 捨てても作り直せるが、**再課金を避けるため入れる** |
+| `snapshots.json` | snapshot の行 | 作り直せない |
+| `snapshots/<month>.png` | 画像（`image_path` と同じ相対パス） | 作り直せない |
+
+- **入れないもの**：`way` / `poi`（マスタは `ReimportOsmAreaUseCase` で作り直す）、
+  `way_growth` / `codex_progress`（導出。インポート後に再計算する＝冪等性がここで効く）、
+  APIキー・自宅座標（セキュアストレージ側）。
+  シナリオ進行はテーブル自体が未実装なので**実装したらエントリを足す**（`BackupCodec` に申し送り）
+- **インポートは破壊的**：全削除→挿入を1トランザクション、画像はDBの行より先に書く。
+  検証（schemaVersion・必須エントリ・件数整合・行に対応する画像の有無）は
+  **すべて書き込みの前**に終わらせる＝壊れたzipで「消えたのに復元もされていない」を作らない。
+  UIは確認ダイアログを必ず挟む
+- **自宅位置は復元されない**（バックアップ非対象）。インポート成功時に再登録を案内する
 - 機種変更はエクスポート→インポートで完結。**サーバー同期は作らない**
 
 ## 7. テスト方針
@@ -251,3 +292,4 @@ GPS（1〜3秒間隔）→ 精度フィルタ → map matching（ローカルway
 | APIキー | ユーザー入力方式でも、配布するなら入力の手間がオンボーディングの壁になる。配布時はプロキシ必須 |
 | Health Connect / HealthKit | 押し忘れ救済のみに使用。権限が取れない場合は機能ごと落とせる設計にする |
 | 天候APIの欠測 | 後付け取得なのでリトライで埋める。欠測は「天候不明」として変奏・条件判定から除外 |
+| Auto Backup の容量上限 | `location_sample` は1回の散歩で数百〜千行増えるので、**1年前後で Android Auto Backup の25MBクォータを超えうる**（超えるとOS側のバックアップが黙って止まる）。対策の主線は手動エクスポート（§6）＝OS任せの1本に依存しない。上限に当たったら古いサンプルの間引き（`passage` は残す）を検討する |

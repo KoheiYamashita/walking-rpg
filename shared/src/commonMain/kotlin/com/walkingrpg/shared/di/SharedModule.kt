@@ -8,6 +8,8 @@ import com.walkingrpg.shared.data.WalkRecorderImpl
 import com.walkingrpg.shared.data.WalkSessionExporterImpl
 import com.walkingrpg.shared.data.SetupRepositoryImpl
 import com.walkingrpg.shared.data.WalkSessionRepositoryImpl
+import com.walkingrpg.shared.data.backup.BackupArchiveCodec
+import com.walkingrpg.shared.data.backup.BackupStoreImpl
 import com.walkingrpg.shared.data.codex.CodexProgressRepositoryImpl
 import com.walkingrpg.shared.data.codex.InMemoryRecentCodexRepository
 import com.walkingrpg.shared.data.createDatabase
@@ -41,6 +43,10 @@ import com.walkingrpg.shared.data.weather.weatherHttpClient
 import com.walkingrpg.shared.domain.Clock
 import com.walkingrpg.shared.domain.GetPlatformNameUseCase
 import com.walkingrpg.shared.domain.SystemInfoRepository
+import com.walkingrpg.shared.domain.backup.BackupCodec
+import com.walkingrpg.shared.domain.backup.BackupStore
+import com.walkingrpg.shared.domain.backup.ExportBackupUseCase
+import com.walkingrpg.shared.domain.backup.ImportBackupUseCase
 import com.walkingrpg.shared.domain.codex.CodexConfig
 import com.walkingrpg.shared.domain.codex.CodexProgressRepository
 import com.walkingrpg.shared.domain.codex.GetCodexUseCase
@@ -474,6 +480,17 @@ val sharedModule = module {
     // 疎通確認は生成と同じ経路（LlmClient）で行う。実装は data/llm 側の薄いアダプタで、
     // セットアップ画面（SetupViewModel）はこの bind の差し替えだけで #6 のまま動く
     single<LlmConnectionTester> { LlmClientConnectionTester(get()) }
+
+    // --- バックアップ（issue #18・architecture.md §6） ---
+    // zipの入出力（BackupArchive）とファイル選択（FilePicker）はプラットフォーム側。
+    // 表を横断して1トランザクションで入れ替えるので、BackupStore だけはDBを直接持つ
+    // （BackupStore のKDoc「跨いだ原子性」）。
+    single<BackupStore> { BackupStoreImpl(get(), get()) }
+    single<BackupCodec> { BackupArchiveCodec() }
+    factoryOf(::ExportBackupUseCase)
+    // 導出は復元後に作り直す。RecomputeAfterWalkUseCase は使わない
+    // （Recent* への副作用がある。ImportBackupUseCase のKDoc）
+    factoryOf(::ImportBackupUseCase)
 
     factoryOf(::IsSetupCompletedUseCase)
     factoryOf(::LoadSetupSettingsUseCase)

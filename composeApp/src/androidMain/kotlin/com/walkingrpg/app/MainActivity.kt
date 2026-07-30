@@ -6,6 +6,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import com.walkingrpg.shared.domain.review.RequestPendingReviewUseCase
+import com.walkingrpg.shared.platform.AndroidFilePicker
 import com.walkingrpg.shared.platform.AndroidLocationPermissionController
 import com.walkingrpg.shared.platform.WalkNotifierIntents
 import org.koin.android.ext.android.inject
@@ -28,10 +29,17 @@ class MainActivity : ComponentActivity() {
      */
     private val requestPendingReview: RequestPendingReviewUseCase by inject()
 
+    /**
+     * 手動インポート（issue #18）のファイル選択。権限ダイアログと同じ事情で
+     * Activityのランチャーを預ける（`registerForActivityResult` はSTARTED前に登録が必要）。
+     */
+    private val filePicker: AndroidFilePicker by inject()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         locationPermissionController.attach(this)
+        filePicker.attach(this)
         // プロセスが死んでいた状態で通知をタップした場合はこちらに入る
         openReviewIfRequested(intent)
         setContent {

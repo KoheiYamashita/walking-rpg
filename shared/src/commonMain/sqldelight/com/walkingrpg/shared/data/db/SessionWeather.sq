@@ -42,3 +42,14 @@ ORDER BY s.ended_at, s.id;
 
 countSessionWeather:
 SELECT COUNT(*) FROM session_weather;
+
+-- 手動エクスポート（architecture.md §6・issue #18）の読み口。
+-- この表は外部APIの観測値で手元から再計算できない＝バックアップの対象。
+selectAllSessionWeathers:
+SELECT session_id, condition, temperature, fetched_at
+FROM session_weather
+ORDER BY session_id;
+
+-- 手動インポートの全入れ替え（deleteAll → upsert を1トランザクション。BackupStore）。
+deleteAllSessionWeathers:
+DELETE FROM session_weather;

@@ -9,8 +9,8 @@
 --
 -- image_path は**永続領域からの相対パス**（'snapshots/2026-06.png'）。絶対パスを入れないのは
 -- 端末のサンドボックスパスがOS更新・機種変更・再インストールで変わるためで、
--- 手動エクスポート（architecture.md §6・issue #18）が「DBファイル＋snapshots/ ディレクトリ」を
--- そのまま zip に入れるだけで済むのもこの形のおかげ。実際のルートの解決は
+-- 手動エクスポート（architecture.md §6・issue #18）が **zipのエントリ名にこの値をそのまま使えて、
+-- 復元先を計算し直さずに済む**のもこの形のおかげ。実際のルートの解決は
 -- プラットフォーム側（SnapshotImageStore）に閉じる。
 --
 -- 書き込み順は「画像ファイル → この行」（GenerateMonthlySnapshotsUseCase）。
@@ -48,3 +48,21 @@ WHERE month = ?;
 
 countSnapshots:
 SELECT COUNT(*) FROM snapshot;
+
+-- 手動インポート（architecture.md §6・issue #18）専用の書き口。
+--
+-- ここだけ OR REPLACE を許すのは、insertSnapshot が守っている「一度作った月は
+-- 書き換えない」の趣旨と衝突しないから：インポートは *この端末で育てた街を
+-- zipの中身に置き換える* 操作で、置き換わるのは「別の端末の同じ月」ではなく
+-- 「捨てると決めた側の月」。deleteAllSnapshots のあとに走るので実際には衝突しないが、
+-- 壊れたzipに同じ月が二度入っていても落ちないようにしておく。
+-- **通常の生成（GenerateMonthlySnapshotsUseCase）からは絶対に呼ばないこと。**
+replaceSnapshot:
+INSERT OR REPLACE INTO snapshot(month, image_path, stats_json, created_at)
+VALUES (?, ?, ?, ?);
+
+-- 手動インポートの全入れ替え（deleteAll → replaceSnapshot を1トランザクション。BackupStore）。
+-- 画像ファイルの後始末（SnapshotImageStore.delete）は行を消す側と対で行う
+-- ＝行の無い画像がストレージに溜まらない。
+deleteAllSnapshots:
+DELETE FROM snapshot;

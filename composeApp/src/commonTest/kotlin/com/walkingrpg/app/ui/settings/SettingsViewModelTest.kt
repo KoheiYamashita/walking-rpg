@@ -6,9 +6,14 @@ import com.walkingrpg.app.ui.setup.FakeOsmMasterRepository
 import com.walkingrpg.app.ui.setup.FakePermissionRepository
 import com.walkingrpg.app.ui.setup.FakeSetupRepository
 import com.walkingrpg.app.ui.setup.ImmediateLlmConnectionTester
+import com.walkingrpg.shared.domain.backup.BackupFormatException
+import com.walkingrpg.shared.domain.backup.ExportBackupUseCase
+import com.walkingrpg.shared.domain.backup.HOME_NOT_RESTORED_NOTICE
+import com.walkingrpg.shared.domain.backup.ImportBackupUseCase
 import com.walkingrpg.shared.domain.codex.CodexProgress
 import com.walkingrpg.shared.domain.codex.CodexProgressRepository
 import com.walkingrpg.shared.domain.codex.RecomputeCodexProgressUseCase
+import com.walkingrpg.shared.domain.growth.RecomputeWayGrowthUseCase
 import com.walkingrpg.shared.domain.matching.Passage
 import com.walkingrpg.shared.domain.matching.PassageRepository
 import com.walkingrpg.shared.domain.matching.SessionVisit
@@ -59,6 +64,8 @@ import kotlin.test.assertTrue
  * - 天候は形式エラーをそのまま出すこと
  * - 自宅が未登録のときのぼかし半径変更が「効かない」ことを黙って隠さないこと
  * - 再取り込みで図鑑進捗の作り直しまで走ること（POI入れ替えで進捗が食い違わない）
+ * - バックアップ（issue #18）：エクスポートが共有まで届くこと、**インポートは確認を
+ *   経由しないと走らないこと**、壊れたzipで何も書かないこと
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class SettingsViewModelTest {
@@ -350,6 +357,148 @@ class SettingsViewModelTest {
         assertEquals(0, codexProgressRepository.replaceCount)
     }
 
+    // --- バックアップ（issue #18） ---
+
+    @Test
+    fun エクスポートするとzipが共有されて結果が出る() = runTest(dispatcher) {
+        val fileShare = RecordingFileShare()
+        val viewModel = viewModel(fileShare = fileShare)
+        advanceUntilIdle()
+
+        viewModel.onExportBackup()
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertFalse(state.isExportingBackup)
+        assertNull(state.backupExportError)
+        val result = assertNotNull(state.backupExportResult)
+        assertEquals(result.fileName, fileShare.sharedFileName, "共有UIに渡っていない")
+        assertTrue(result.fileName.endsWith(".zip"), result.fileName)
+    }
+
+    @Test
+    fun エクスポートが失敗したらエラーを出す() = runTest(dispatcher) {
+        val viewModel = viewModel(
+            backupStore = FakeBackupStore(failOnRead = IllegalStateException("読めない")),
+        )
+        advanceUntilIdle()
+
+        viewModel.onExportBackup()
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertFalse(state.isExportingBackup)
+        assertNull(state.backupExportResult)
+        assertEquals("読めない", state.backupExportError)
+    }
+
+    @Test
+    fun インポートのボタンでは確認を出すだけで何も起きない() = runTest(dispatcher) {
+        // 破壊的操作なので、押した瞬間にファイル選択へ進ませない
+        val store = FakeBackupStore()
+        val picker = FakeFilePicker()
+        val viewModel = viewModel(backupStore = store, filePicker = picker)
+        advanceUntilIdle()
+
+        viewModel.onImportBackupRequested()
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.backupImportConfirming, "確認ダイアログが出ていない")
+        assertFalse(viewModel.uiState.value.isImportingBackup)
+        assertEquals(0, picker.pickCount, "確認前にファイル選択が開いている")
+        assertEquals(0, store.replaceCount, "確認前に書き込みが走っている")
+    }
+
+    @Test
+    fun 確認をやめれば何も起きない() = runTest(dispatcher) {
+        val store = FakeBackupStore()
+        val picker = FakeFilePicker()
+        val viewModel = viewModel(backupStore = store, filePicker = picker)
+        advanceUntilIdle()
+
+        viewModel.onImportBackupRequested()
+        viewModel.onImportBackupDismissed()
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.backupImportConfirming)
+        assertEquals(0, picker.pickCount)
+        assertEquals(0, store.replaceCount)
+    }
+
+    @Test
+    fun 確認してインポートすると復元されて自宅の案内が出る() = runTest(dispatcher) {
+        val store = FakeBackupStore()
+        val growths = CountingWayGrowthRepository()
+        val codex = CountingCodexProgressRepository()
+        val viewModel = viewModel(
+            backupStore = store,
+            wayGrowthRepository = growths,
+            codexProgressRepository = codex,
+        )
+        advanceUntilIdle()
+
+        viewModel.onImportBackupRequested()
+        viewModel.onImportBackupConfirmed()
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertFalse(state.backupImportConfirming, "ダイアログが出たままになっている")
+        assertFalse(state.isImportingBackup)
+        assertNull(state.backupImportError)
+        val result = assertNotNull(state.backupImportResult)
+        assertEquals(
+            HOME_NOT_RESTORED_NOTICE,
+            result.notice,
+            "自宅を再登録する案内が出ていない",
+        )
+        assertEquals(1, store.replaceCount)
+        // 導出は復元後に作り直す（way_growth → codex_progress）
+        assertEquals(1, growths.replaceCount, "道の成長が作り直されていない")
+        assertEquals(1, codex.replaceCount, "図鑑進捗が作り直されていない")
+    }
+
+    @Test
+    fun ファイル選択をキャンセルしたらエラーを出さない() = runTest(dispatcher) {
+        val store = FakeBackupStore()
+        val viewModel = viewModel(backupStore = store, filePicker = FakeFilePicker(bytes = null))
+        advanceUntilIdle()
+
+        viewModel.onImportBackupRequested()
+        viewModel.onImportBackupConfirmed()
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertFalse(state.isImportingBackup)
+        assertNull(state.backupImportError, "キャンセルがエラーとして出ている")
+        assertNull(state.backupImportResult)
+        assertEquals(0, store.replaceCount)
+    }
+
+    @Test
+    fun 壊れたzipならエラーを出してDBを触らない() = runTest(dispatcher) {
+        val store = FakeBackupStore()
+        val growths = CountingWayGrowthRepository()
+        val viewModel = viewModel(
+            backupStore = store,
+            backupCodec = FakeBackupCodec(
+                decodeFailure = BackupFormatException("バックアップに passages.json が入っていません。"),
+            ),
+            wayGrowthRepository = growths,
+        )
+        advanceUntilIdle()
+
+        viewModel.onImportBackupRequested()
+        viewModel.onImportBackupConfirmed()
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertFalse(state.isImportingBackup)
+        assertNull(state.backupImportResult)
+        assertEquals("バックアップに passages.json が入っていません。", state.backupImportError)
+        assertEquals(0, store.replaceCount, "検証に失敗したのに書き込みが走っている")
+        assertEquals(0, growths.replaceCount, "検証に失敗したのに導出が作り直されている")
+    }
+
     // --- ログに秘密を出さない ---
 
     @Test
@@ -375,8 +524,23 @@ class SettingsViewModelTest {
         location: FakeCurrentLocationRepository = FakeCurrentLocationRepository(),
         permissions: FakePermissionRepository = FakePermissionRepository(),
         codexProgressRepository: CodexProgressRepository = CountingCodexProgressRepository(),
+        backupStore: FakeBackupStore = FakeBackupStore(),
+        backupCodec: FakeBackupCodec = FakeBackupCodec(),
+        filePicker: FakeFilePicker = FakeFilePicker(),
+        fileShare: RecordingFileShare = RecordingFileShare(),
+        wayGrowthRepository: CountingWayGrowthRepository = CountingWayGrowthRepository(),
     ): SettingsViewModel {
         val masterRepository = FakeOsmMasterRepository(counts)
+        val backupArchive = FakeBackupArchive()
+        val recomputeWayGrowth = RecomputeWayGrowthUseCase(
+            passageRepository = EmptyPassageRepository(),
+            wayGrowthRepository = wayGrowthRepository,
+        )
+        val recomputeCodexProgress = RecomputeCodexProgressUseCase(
+            passageRepository = EmptyPassageRepository(),
+            osmMasterRepository = masterRepository,
+            codexProgressRepository = codexProgressRepository,
+        )
         return SettingsViewModel(
             loadSetupSettings = LoadSetupSettingsUseCase(repository),
             testLlmConnection = TestLlmConnectionUseCase(tester, repository),
@@ -396,6 +560,21 @@ class SettingsViewModelTest {
                 ),
             ),
             getOsmMasterCounts = GetOsmMasterCountsUseCase(masterRepository),
+            exportBackup = ExportBackupUseCase(
+                backupStore = backupStore,
+                codec = backupCodec,
+                archive = backupArchive,
+                fileShare = fileShare,
+                clock = FixedClock(),
+            ),
+            importBackup = ImportBackupUseCase(
+                filePicker = filePicker,
+                archive = backupArchive,
+                codec = backupCodec,
+                backupStore = backupStore,
+                recomputeWayGrowth = recomputeWayGrowth,
+                recomputeCodexProgress = recomputeCodexProgress,
+            ),
             observeLocationPermission = ObserveLocationPermissionUseCase(permissions),
             requestLocationPermission = RequestLocationPermissionUseCase(permissions),
             refreshLocationPermission = RefreshLocationPermissionUseCase(permissions),

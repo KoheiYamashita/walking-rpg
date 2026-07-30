@@ -25,3 +25,14 @@ countSamplesBySession:
 SELECT COUNT(*)
 FROM location_sample
 WHERE session_id = ?;
+
+-- 手動エクスポート（architecture.md §6・issue #18）の読み口。
+-- 並びを (session_id, ts) で固定するのは、同じDBからは必ず同じzipが出るようにするため。
+selectAllSamples:
+SELECT session_id, ts, lat, lon, accuracy
+FROM location_sample
+ORDER BY session_id, ts;
+
+-- 手動インポートの全入れ替え（deleteAll → insert を1トランザクション。BackupStore）。
+deleteAllSamples:
+DELETE FROM location_sample;
