@@ -1,8 +1,9 @@
 package com.walkingrpg.shared.domain.llm
 
-import com.walkingrpg.shared.domain.review.TimeOfDayResolver
 import com.walkingrpg.shared.domain.review.WalkReview
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 
 /**
@@ -17,10 +18,15 @@ import kotlinx.coroutines.flow.map
  * プロンプトが変わっている（[LlmCacheEntry.matches] が false）行は「無い」扱いにする
  * ＝古い方針で書かれた一言を出し続けるより定型文のほうが安全で、次のドレイン
  * （[GenerateWalkReviewRemarkUseCase]）が作り直す（`GetPoiFlavorUseCase` と同じ規約）。
+ *
+ * ## 事実の調達は生成側と同じ1本
+ * 指紋の計算に使う材料（記憶・押し忘れ・切り口）は [GetWalkRemarkContextUseCase] から取る
+ * ＝生成側とまったく同じ道を通る。ここで独自に組むと、生成済みの一言を
+ * 「別のプロンプトで作られたもの」と誤判定して**毎回作り直す**（＝毎回課金する）。
  */
 class ObserveWalkReviewRemarkUseCase(
     private val cacheRepository: LlmCacheRepository,
-    private val timeOfDayResolver: TimeOfDayResolver,
+    private val getWalkRemarkContext: GetWalkRemarkContextUseCase,
     private val config: LlmGenerationConfig = LlmGenerationConfig.DEFAULT,
 ) {
     /**
@@ -29,22 +35,26 @@ class ObserveWalkReviewRemarkUseCase(
      * @return 未生成のあいだは定型文、生成できたら生成文が流れる。必ず1回目が流れる
      *  ＝画面は文章の枠を空にしない。
      */
-    operator fun invoke(review: WalkReview): Flow<WalkReviewRemark> {
-        val facts = WalkReviewRemarkFacts.of(
-            review = review,
-            timeOfDay = timeOfDayResolver.timeOfDay(review.startedAtMs),
-        )
+    operator fun invoke(review: WalkReview): Flow<WalkReviewRemark> = flow {
+        // 材料の調達はDBの読みが入るので、購読が始まってから1回だけ行う
+        // （呼び出し側を suspend にすると `ReviewViewModel` の組み立てまで待たされる）。
+        val facts = WalkReviewRemarkFacts.of(review, getWalkRemarkContext(review))
         val promptHash = WalkReviewRemarkPromptBuilder
             .request(facts, config.walkReviewRemarkMaxTokens)
             .promptHash()
 
-        return cacheRepository.observe(remarkCacheKey(review.sessionId)).map { entry ->
-            val generated = entry?.takeIf { it.matches(promptHash) }
-            if (generated == null) {
-                WalkReviewRemark(text = WalkReviewRemarkFallback.text(facts), isGenerated = false)
-            } else {
-                WalkReviewRemark(text = generated.text, isGenerated = true)
-            }
-        }
+        emitAll(
+            cacheRepository.observe(remarkCacheKey(review.sessionId)).map { entry ->
+                val generated = entry?.takeIf { it.matches(promptHash) }
+                if (generated == null) {
+                    WalkReviewRemark(
+                        text = WalkReviewRemarkFallback.text(facts),
+                        isGenerated = false,
+                    )
+                } else {
+                    WalkReviewRemark(text = generated.text, isGenerated = true)
+                }
+            },
+        )
     }
 }

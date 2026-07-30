@@ -5,6 +5,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.test.fail
 
 /**
  * 押し忘れ救済の取り込み（issue #7）。
@@ -52,6 +53,12 @@ class ImportDailyStepsUseCaseTest {
             assertEquals(today, day, "前日を聞かれるのは今日に対してだけ")
             return yesterday
         }
+
+        // 取り込みは「今日と前日」しか見ない（時刻からの変換・日数の差はパートナーの一言側）。
+        override fun day(epochMillis: Long): CalendarDay = fail("取り込みは時刻を見ない")
+
+        override fun daysBetween(from: CalendarDay, until: CalendarDay): Int =
+            fail("取り込みは日数の差を見ない")
     }
 
     private fun daily(day: CalendarDay, steps: Int, distance: Double? = null) =

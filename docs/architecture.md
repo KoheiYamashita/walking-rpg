@@ -2,7 +2,7 @@
 
 概要設計は [design.md](design.md)。ここは実装側の設計を扱う。
 
-最終更新: 2026-07-27
+最終更新: 2026-07-30
 
 ---
 
@@ -116,8 +116,19 @@ iosApp/       # iOSエントリポイント
 
 ### LLM
 
-- `llm_cache(key, kind, prompt_hash, text, created_at)`
-- `utterance_log(place_ref, angle, said_at)` — 単調化対策（同じ切り口の再使用禁止。design.md §5）
+- `llm_cache(key, kind, prompt_hash, text, created_at)` — 導出キャッシュ（捨てて作り直せる）
+- `utterance_log(id, session_id, place_ref, angle, said_at)` — 単調化対策
+  （同じ切り口の再使用禁止。design.md §5）。**真実の源に準ずる追記ログ**で、
+  `passage` からは再計算できない（「何を言ったか」はログに残っていない）。
+  だから消せない＝バックアップの対象（§6）。
+  - `place_ref` は内部キー（`way:<id>` / `species:<id>` / `day`）で、
+    **プロンプトには絶対に出さない**（一言に位置情報を渡さない規約）
+  - `angle` は切り口（`RemarkAngle` の name）。1回の散歩につき1行で、
+    生成が成功したときだけ書く（定型文で凌いだ散歩は書かない）
+  - `said_at` は端末時計ではなく **`walk_session.started_at` から導く**
+    （`codex_progress.discovered_at` と同じ理由）。一言の読み出し側は同じ事実から
+    `prompt_hash` を計算し直してキャッシュと突き合わせるので、時計を読むと
+    「同じ散歩なのに時間が経つと指紋が変わる」＝毎回再生成（＝課金）になる
 
 > **原則：導出テーブルはすべて `passage` から再計算できること。**
 > ロジック変更やマイグレーションを恐れない。これが減衰なし設計の実装上の配当。
@@ -196,7 +207,8 @@ GPS（1〜3秒間隔）→ 精度フィルタ → map matching（ローカルway
   Android Auto Backup / iCloudバックアップの対象に含める。
   APIキーはセキュアストレージ側なのでバックアップに乗らない（＝安全）
 - **手動エクスポート/インポート**：真実の源（walk_session / location_sample / passage /
-  step_import / session_weather）＋スナップショット画像＋シナリオ進行をzipで書き出し・取り込み。
+  step_import / session_weather）＋**utterance_log**（再計算できない追記ログ。§4）
+  ＋スナップショット画像＋シナリオ進行をzipで書き出し・取り込み。
   導出テーブルは復元後に再計算する（冪等性がここで効く）
 - 機種変更はエクスポート→インポートで完結。**サーバー同期は作らない**
 

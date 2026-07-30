@@ -196,4 +196,12 @@ internal class FakeWalkSessionRepository : WalkSessionRepository {
         .filterNot { it.isOpen }
         .sortedWith(compareByDescending<WalkSession> { it.endedAtMs }.thenByDescending { it.id })
         .take(limit)
+
+    // 本実装（SQL）と同じ：開始時刻が [fromMs, untilMs) で、記録中・放置も含める
+    override suspend fun sessionsStartedBetween(
+        fromMs: Long,
+        untilMs: Long,
+    ): List<WalkSession> = sessionsState.value
+        .filter { it.startedAtMs >= fromMs && it.startedAtMs < untilMs }
+        .sortedBy { it.startedAtMs }
 }

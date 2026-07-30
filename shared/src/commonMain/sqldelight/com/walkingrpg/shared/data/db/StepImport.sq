@@ -25,7 +25,8 @@ upsertStepImport:
 INSERT OR REPLACE INTO step_import(date, steps, distance_estimate)
 VALUES (?, ?, ?);
 
--- 翌日のパートナーの一言（#16）はこれ1本で「昨日の歩数」を引く。
+-- 日付を指定して1日ぶんだけ引く（取り込みの確認用）。
+-- パートナーの一言（#16）は selectAllStepImports から「記録が無いのに歩いた日」を絞る。
 selectStepImport:
 SELECT date, steps, distance_estimate
 FROM step_import

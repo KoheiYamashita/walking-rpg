@@ -7,6 +7,7 @@ import com.walkingrpg.shared.data.WalkSessionRepositoryImpl
 import com.walkingrpg.shared.data.codex.CodexProgressRepositoryImpl
 import com.walkingrpg.shared.data.growth.WayGrowthRepositoryImpl
 import com.walkingrpg.shared.data.llm.LlmCacheRepositoryImpl
+import com.walkingrpg.shared.data.llm.UtteranceLogRepositoryImpl
 import com.walkingrpg.shared.data.matching.PassageRepositoryImpl
 import com.walkingrpg.shared.data.osm.OsmMasterRepositoryImpl
 import com.walkingrpg.shared.data.steps.StepImportRepositoryImpl
@@ -16,6 +17,8 @@ import com.walkingrpg.shared.domain.codex.ForeshadowStage
 import com.walkingrpg.shared.domain.growth.GrowthStage
 import com.walkingrpg.shared.domain.llm.LlmCacheEntry
 import com.walkingrpg.shared.domain.llm.LlmTaskKind
+import com.walkingrpg.shared.domain.llm.RemarkAngle
+import com.walkingrpg.shared.domain.llm.UtteranceRecord
 import com.walkingrpg.shared.domain.llm.llmCacheKey
 import com.walkingrpg.shared.domain.llm.poiFlavorLogicalKey
 import com.walkingrpg.shared.domain.growth.WayGrowth
@@ -118,13 +121,15 @@ class DatabaseMigrationTest {
                 "poi",
                 "session_weather",
                 "step_import",
+                "utterance_log",
                 "walk_session",
                 "way",
                 "way_growth",
             ),
             driver.tableNames(),
             "way / poi / passage / way_growth（1.sqm）・step_import（2.sqm）・" +
-                "session_weather（3.sqm）・llm_cache（4.sqm）・codex_progress（5.sqm）が足される",
+                "session_weather（3.sqm）・llm_cache（4.sqm）・codex_progress（5.sqm）・" +
+                "utterance_log（6.sqm）が足される",
         )
     }
 
@@ -238,6 +243,30 @@ class DatabaseMigrationTest {
         )
         assertEquals(SyntheticWalk.START_MS, codex.progress("water_kingfisher")?.discoveredAtMs)
         assertNull(codex.progress("park_turtle_dove")?.discoveredAtMs, "未発見は NULL のまま往復する")
+
+        // パートナーの発話履歴（6.sqm で足した utterance_log）。
+        // 導出ではない追記ログなので作り直せないぶん、更新しただけの端末でも
+        // 0件から積み始められることが要（次の散歩の一言から単調化対策が効く）
+        val utterances = UtteranceLogRepositoryImpl(database)
+        assertTrue(utterances.utterances(sessionId).isEmpty(), "更新直後は1件も言っていない")
+        val record = UtteranceRecord(
+            sessionId = sessionId,
+            placeRef = "way:${way.id}",
+            angle = RemarkAngle.MEMORY,
+            saidAtMs = SyntheticWalk.START_MS,
+        )
+        utterances.replaceSessionUtterances(sessionId, listOf(record))
+        assertEquals(listOf(record), utterances.utterances(sessionId))
+        assertEquals(
+            listOf(record),
+            utterances.recentUtterances(
+                placeRef = "way:${way.id}",
+                beforeMs = SyntheticWalk.START_MS + 1L,
+                excludeSessionId = sessionId + 1L,
+                limit = 12,
+            ),
+            "切り口の除外集合が引ける（place_ref × angle の索引ごと往復する）",
+        )
     }
 
     @Test
@@ -264,6 +293,7 @@ class DatabaseMigrationTest {
                 "poi",
                 "session_weather",
                 "step_import",
+                "utterance_log",
                 "walk_session",
                 "way",
                 "way_growth",

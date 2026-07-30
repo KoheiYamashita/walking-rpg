@@ -52,4 +52,16 @@ interface WalkSessionRepository {
      * **課金する処理の対象を直近だけに絞る**ためのものだから。
      */
     suspend fun recentFinishedSessions(limit: Int): List<WalkSession>
+
+    /**
+     * 開始時刻が `[fromMs, untilMs)` に入るセッションを開始時刻順に返す。
+     *
+     * 押し忘れの判定（issue #16・design.md §3「開始を押し忘れた日」）の入口。
+     * 歩数だけ残っている日に言及してよいのは「その日に散歩の記録が1件もない日」だけなので、
+     * 直近数日ぶんの開始時刻を引いて突き合わせる。
+     *
+     * 記録中・放置（[SessionEndReason.ABANDONED]）も含める：**開始を押した日は
+     * 押し忘れではない**（押したあとどう終わったかは関係ない）。
+     */
+    suspend fun sessionsStartedBetween(fromMs: Long, untilMs: Long): List<WalkSession>
 }

@@ -20,6 +20,7 @@ import com.walkingrpg.shared.data.llm.HttpLlmClientSelector
 import com.walkingrpg.shared.data.llm.LlmCacheRepositoryImpl
 import com.walkingrpg.shared.data.llm.LlmClientConnectionTester
 import com.walkingrpg.shared.data.llm.OpenAiLlmClient
+import com.walkingrpg.shared.data.llm.UtteranceLogRepositoryImpl
 import com.walkingrpg.shared.data.llm.llmHttpClient
 import com.walkingrpg.shared.data.matching.PassageRepositoryImpl
 import com.walkingrpg.shared.data.osm.OsmMasterRepositoryImpl
@@ -58,6 +59,7 @@ import com.walkingrpg.shared.domain.growth.WayGrowthRepository
 import com.walkingrpg.shared.domain.llm.DrainLlmGenerationQueueUseCase
 import com.walkingrpg.shared.domain.llm.GenerateWalkReviewRemarkUseCase
 import com.walkingrpg.shared.domain.llm.GetPoiFlavorUseCase
+import com.walkingrpg.shared.domain.llm.GetWalkRemarkContextUseCase
 import com.walkingrpg.shared.domain.llm.GetSpeciesDescriptionUseCase
 import com.walkingrpg.shared.domain.llm.LlmCacheRepository
 import com.walkingrpg.shared.domain.llm.LlmClientSelector
@@ -66,6 +68,8 @@ import com.walkingrpg.shared.domain.llm.LlmGenerationQueue
 import com.walkingrpg.shared.domain.llm.ObserveWalkReviewRemarkUseCase
 import com.walkingrpg.shared.domain.llm.PrebatchPoiFlavorUseCase
 import com.walkingrpg.shared.domain.llm.PrebatchSpeciesDescriptionUseCase
+import com.walkingrpg.shared.domain.llm.UtteranceLogRepository
+import com.walkingrpg.shared.domain.llm.WalkRemarkConfig
 import com.walkingrpg.shared.domain.map.GetMapSceneUseCase
 import com.walkingrpg.shared.domain.matching.MapMatchingConfig
 import com.walkingrpg.shared.domain.matching.PassageRepository
@@ -288,7 +292,8 @@ val sharedModule = module {
 
     // --- 押し忘れ救済（issue #7） ---
     // 歩数計（DailyStepsSource）の実装はプラットフォーム側（platformModule）。
-    // 呼び出しタイミング（アプリ起動時）の結線は #16 で行う。
+    // 呼び出しタイミング（アプリ起動時）の結線は AppViewModel（#16）。
+    // 出口（パートナーが言及する）は GetWalkRemarkContextUseCase（#16）。
     single<CalendarDays> { SystemCalendarDays(get()) }
     single<StepImportRepository> { StepImportRepositoryImpl(get()) }
     factoryOf(::ImportDailyStepsUseCase)
@@ -358,11 +363,12 @@ val sharedModule = module {
         GenerateWalkReviewRemarkUseCase(
             walkSessionRepository = get(),
             getWalkReview = get(),
+            getWalkRemarkContext = get(),
             cacheRepository = get(),
+            utteranceLogRepository = get(),
             setupRepository = get(),
             clients = get(),
             networkStatus = get(),
-            timeOfDayResolver = get(),
             clock = get(),
             config = get(),
         )
@@ -379,6 +385,26 @@ val sharedModule = module {
     factoryOf(::GetSpeciesDescriptionUseCase)
     // 振り返りの一言は「読み切り」ではなく購読（生成が届いたら差し替わる）
     factoryOf(::ObserveWalkReviewRemarkUseCase)
+
+    // --- パートナーの一言（issue #16） ---
+    // 記憶の深さ・押し忘れの言及範囲（WalkRemarkConfig）はここで差し替えられる。
+    // UIからは触らせない。数字を動かすとプロンプトが変わる＝既存の一言は作り直される。
+    single { WalkRemarkConfig.DEFAULT }
+    // 発話履歴（utterance_log）は捨てられない追記ログ（UtteranceLogRepository のKDoc）。
+    single<UtteranceLogRepository> { UtteranceLogRepositoryImpl(get()) }
+    // 一言の材料を調達する1本。**生成側と読み側の両方がこれを呼ぶ**のがキャッシュの前提
+    // （GetWalkRemarkContextUseCase のKDoc「生成側と読み側が同じ1本を通る」）。
+    factory {
+        GetWalkRemarkContextUseCase(
+            walkSessionRepository = get(),
+            passageRepository = get(),
+            stepImportRepository = get(),
+            utteranceLogRepository = get(),
+            timeOfDayResolver = get(),
+            calendarDays = get(),
+            config = get(),
+        )
+    }
 
     // --- 振り返り（issue #15） ---
     // 数値サマリは確定データからの再計算で組む（通信しない）。閾値は成長・図鑑と同じ1個を使う

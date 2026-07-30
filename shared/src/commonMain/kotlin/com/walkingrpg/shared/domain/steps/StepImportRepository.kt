@@ -15,9 +15,15 @@ interface StepImportRepository {
      */
     suspend fun upsert(stepImport: StepImport)
 
-    /** 指定日の記録（無ければ `null`）。翌日のパートナーの一言（#16）はこれを引く。 */
+    /** 指定日の記録（無ければ `null`）。 */
     suspend fun stepImport(day: CalendarDay): StepImport?
 
-    /** 全ての記録を日付順に返す。 */
+    /**
+     * 全ての記録を日付順に返す。
+     *
+     * パートナーの一言（`GetWalkRemarkContextUseCase`）はこちらを引く：
+     * 「その散歩の日より前で、記録が無いのに歩いた日」を探すので、
+     * 1日ずつ日付を指定するより全件から絞るほうが素直（1日1行しか無い表）。
+     */
     suspend fun stepImports(): List<StepImport>
 }

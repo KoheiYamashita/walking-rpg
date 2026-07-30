@@ -1,0 +1,22 @@
+-- v6 → v7：パートナーの発話履歴 utterance_log を足す（issue #16）。
+--
+-- v6 の端末は 1.sqm〜5.sqm を流し終えた状態なので、ここでも中身はバージョンで確定する。
+-- 1.sqm のような IF NOT EXISTS は書かない（あれはスパイク期の後始末。
+-- 付けると「作られなかった」事故が黙って通る）。
+--
+-- 導出キャッシュではなく**追記ログ**なので、値の移し替え先が無い代わりに
+-- 作り直しもできない。既存の端末では行が0件＝「まだ何も言っていない」状態から始まり、
+-- 次の散歩の一言から履歴が積まれていく（切り口の再使用禁止が効き始めるのもそこから）。
+--
+-- 中身は UtteranceLog.sq の CREATE 文と1文字単位で揃えること。ズレると
+-- verifyMigrations（shared/build.gradle.kts）がビルドで落とす。
+
+CREATE TABLE utterance_log (
+    id         INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    session_id INTEGER NOT NULL,  -- その一言を語った散歩
+    place_ref  TEXT NOT NULL,     -- 内部キー（way:<id> / species:<id> / day）
+    angle      TEXT NOT NULL,     -- RemarkAngle の name
+    said_at    INTEGER NOT NULL   -- epoch millis（walk_session.started_at 由来）
+);
+
+CREATE INDEX utterance_log_place_angle ON utterance_log(place_ref, angle);

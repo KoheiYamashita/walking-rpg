@@ -21,11 +21,12 @@ import kotlin.test.assertTrue
 /**
  * 振り返りの一言の生成キュー（[GenerateWalkReviewRemarkUseCase]）。
  *
- * 見たいのは4つ：
+ * 見たいのは5つ：
  * - 対象は**直近の終了済みセッションだけ**（過去全件に課金しない）
  * - キャッシュ済みは投げ直さない（プロンプトが同じなら二度と課金しない）
  * - **従量回線でも投げる**（帰宅直後に効く1リクエストなので待たない）
  * - 放置セッション（`ABANDONED`）と記録中は対象にしない
+ * - 語れた散歩だけ `utterance_log` に1行残る（issue #16。定型文の散歩は書かない）
  */
 class GenerateWalkReviewRemarkUseCaseTest {
 
@@ -41,7 +42,19 @@ class GenerateWalkReviewRemarkUseCaseTest {
         val cache = FakeLlmCacheRepository()
         val setup = LlmSetupRepository()
         val clock = MutableClock(nowMs = 5_000L)
+        val stepImports = FakeStepImportRepository()
+        val utterances = FakeUtteranceLogRepository()
     }
+
+    /** 材料の調達（記憶・押し忘れ・切り口）。生成側と読み側で同じ1本を使う。 */
+    private fun context(fixture: Fixture) = GetWalkRemarkContextUseCase(
+        walkSessionRepository = fixture.sessions,
+        passageRepository = fixture.passages,
+        stepImportRepository = fixture.stepImports,
+        utteranceLogRepository = fixture.utterances,
+        timeOfDayResolver = FakeTimeOfDayResolver(),
+        calendarDays = UtcCalendarDays(),
+    )
 
     private fun useCase(
         fixture: Fixture,
@@ -65,11 +78,12 @@ class GenerateWalkReviewRemarkUseCaseTest {
             ),
             catalog = listOf(species),
         ),
+        getWalkRemarkContext = context(fixture),
         cacheRepository = fixture.cache,
+        utteranceLogRepository = fixture.utterances,
         setupRepository = fixture.setup,
         clients = FakeLlmClientSelector(client),
         networkStatus = FakeNetworkStatus(unmetered = unmetered),
-        timeOfDayResolver = FakeTimeOfDayResolver(),
         clock = fixture.clock,
         config = config,
     )
@@ -216,11 +230,12 @@ class GenerateWalkReviewRemarkUseCaseTest {
                 ),
                 catalog = listOf(species),
             ),
+            getWalkRemarkContext = context(fixture),
             cacheRepository = fixture.cache,
+            utteranceLogRepository = fixture.utterances,
             setupRepository = LlmSetupRepository(settings = null),
             clients = FakeLlmClientSelector(client),
             networkStatus = FakeNetworkStatus(),
-            timeOfDayResolver = FakeTimeOfDayResolver(),
             clock = fixture.clock,
         )
 
@@ -241,6 +256,78 @@ class GenerateWalkReviewRemarkUseCaseTest {
         assertEquals(0, outcome.generated)
         assertEquals(1, outcome.failed)
         assertTrue(fixture.cache.rows().isEmpty(), "次回のドレインでやり直せるよう保存しない")
+    }
+
+    @Test
+    fun 生成できた散歩は発話履歴に1行残る() = runTest {
+        val fixture = Fixture()
+        val sessionId = finishedSession(fixture, startedAtMs = noonUtcMs("2026-07-30"))
+
+        useCase(fixture, client()).drain()
+
+        val record = fixture.utterances.all().single()
+        assertEquals(sessionId, record.sessionId)
+        assertEquals("day", record.placeRef, "材料の無い散歩は日単位のキー")
+        assertEquals(
+            noonUtcMs("2026-07-30"),
+            record.saidAtMs,
+            "時刻は walk_session.started_at 由来（端末時計ではない）",
+        )
+    }
+
+    @Test
+    fun 同じ散歩を作り直しても行は増えない() = runTest {
+        val fixture = Fixture()
+        finishedSession(fixture, startedAtMs = noonUtcMs("2026-07-30"))
+        useCase(fixture, client()).drain()
+
+        // プロンプトが変わった状態（キャッシュの指紋が合わない）を作って作り直させる
+        fixture.cache.save(fixture.cache.rows().values.single().copy(promptHash = "0000000000000000"))
+        useCase(fixture, client()).drain()
+
+        assertEquals(1, fixture.utterances.all().size, "置き換えで書く（追記しない）")
+    }
+
+    @Test
+    fun 定型文で凌いだ散歩は発話履歴に書かない() = runTest {
+        // 定型文は切り口を持たないので、書くと「言っていない切り口」が使用済みになる
+        val fixture = Fixture()
+        finishedSession(fixture, startedAtMs = noonUtcMs("2026-07-30"))
+        val client = client("""{"flavor": "キーが違う"}""")
+
+        useCase(fixture, client).drain()
+
+        assertTrue(fixture.utterances.all().isEmpty())
+        assertEquals(0, fixture.utterances.replaceCount)
+    }
+
+    @Test
+    fun 前の散歩と違う切り口を選ぶ() = runTest {
+        val fixture = Fixture()
+        finishedSession(fixture, startedAtMs = noonUtcMs("2026-07-29"))
+        finishedSession(fixture, startedAtMs = noonUtcMs("2026-07-30"))
+
+        useCase(
+            fixture = fixture,
+            client = client(),
+            config = LlmGenerationConfig(walkReviewSessionLimit = 2),
+        ).drain()
+
+        // 新しい順に作るので、後から作る古い散歩の側は「まだ何も言っていない」状態のまま
+        // ＝どちらも同じ切り口になる。翌日の散歩で履歴が効くことを見るため、もう1日足す
+        finishedSession(fixture, startedAtMs = noonUtcMs("2026-07-31"))
+        useCase(
+            fixture = fixture,
+            client = client(),
+            config = LlmGenerationConfig(walkReviewSessionLimit = 1),
+        ).drain()
+
+        val latest = fixture.utterances.all().single { it.saidAtMs == noonUtcMs("2026-07-31") }
+        val previous = fixture.utterances.all().single { it.saidAtMs == noonUtcMs("2026-07-30") }
+        assertTrue(
+            latest.angle != previous.angle,
+            "同じ場所（day）で同じ切り口を続けない: ${latest.angle}",
+        )
     }
 
     @Test
